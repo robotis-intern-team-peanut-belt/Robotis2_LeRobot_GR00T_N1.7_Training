@@ -1,0 +1,29 @@
+_base: 03_gop15_b16.yaml
+name: 20260727_info_gop15_photometric_b16_s15000_seed42
+description: Corrected weekend photometric augmentation at GOP15 batch 16 and 240,000 sampled examples.
+hypothesis: Mild brightness, contrast, and saturation jitter improves visual robustness without degrading clean held-out imitation loss.
+tags: [omx-insert, gop15, batch-16, augmentation, photometric, seed-42]
+dataset:
+  image_transforms:
+    enable: true
+    max_num_transforms: 2
+    random_order: true
+    tfs:
+      brightness:
+        weight: 1.0
+        type: ColorJitter
+        kwargs: {brightness: [0.8, 1.2]}
+      contrast:
+        weight: 1.0
+        type: ColorJitter
+        kwargs: {contrast: [0.8, 1.2]}
+      saturation:
+        weight: 1.0
+        type: ColorJitter
+        kwargs: {saturation: [0.8, 1.2]}
+tracking:
+  notes: Corrected weekend photometric augmentation; compare with clean 03 at equal samples.
+resources:
+  timeout_hours: 2.75
+annotation:
+  notes: Retain endpoint checkpoint. This retries the failed weekend intent with one structured tfs argument; no geometry, hue, or sharpness transform is used.

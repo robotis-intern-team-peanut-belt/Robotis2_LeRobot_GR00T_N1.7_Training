@@ -1,0 +1,20 @@
+_base: ../base/multi_queue.yaml
+name: 20260724_initial_pilots
+description: Friday-planned bounded augmentation smoke test followed by two comparable pilots.
+time_budget_hours: 24
+runs:
+  - config: ../runs/2026-07-24_initial_pilots/03_photometric_seed42.yaml
+    overrides:
+      - policy.max_steps=20
+      - train.steps=20
+      - train.eval_steps=0
+      - train.save_checkpoint=false
+      - resources.timeout_hours=1
+      - name=omx_photo_smoke_s20_seed42
+      - tracking.backend=none
+      - tracking.enable=false
+      - tracking.mode=disabled
+  - config: ../runs/2026-07-24_initial_pilots/01_relarm_seed42.yaml
+    overrides: []
+  - config: ../runs/2026-07-24_initial_pilots/02_absolute_seed42.yaml
+    overrides: []

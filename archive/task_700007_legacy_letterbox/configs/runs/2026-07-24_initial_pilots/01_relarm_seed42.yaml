@@ -1,0 +1,22 @@
+_base: ../../base/groot_n17.yaml
+name: omx_relarm_absgrip_b16_h40_s20000_seed42
+description: Conservative OMX Insert pilot with relative arms and absolute grippers.
+hypothesis: Relative arm targets improve initial-pose robustness while absolute gripper targets preserve grasp semantics.
+tags: [omx-insert, baseline, relative-arms, seed-42]
+dataset_ref: omx_insert
+dataset:
+  eval_split: 0.1
+  image_transforms:
+    enable: false
+tracking:
+  backend: wandb
+  enable: true
+  entity: robotis-intern-team-peanut-belt
+  project: gr00t-omx-insert
+  mode: online
+  disable_artifact: true
+  notes: Baseline relative-arm/absolute-gripper OMX Insert pilot.
+annotation:
+  owner: intern-team
+  notes: Primary initial pilot planned on 2026-07-24. Compare held-out loss and offline actions; do not infer robot success from loss alone.
+  evaluation_required: [offline, shadow, guarded_hardware]

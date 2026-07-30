@@ -1,0 +1,30 @@
+_base: ../base/multi_queue.yaml
+name: 20260727_overnight_information_gain
+description: Confirmation-only 15-hour matched-sample GOP, batch, and exposure-augmentation queue.
+continue_on_failure: false
+min_free_disk_gib: 130
+max_attempts: 1
+time_budget_hours: 14.75
+runs:
+  - config: ../runs/2026-07-27_overnight_information_gain/04_gop15_photometric_b16.yaml
+    overrides:
+      - policy.max_steps=20
+      - train.steps=20
+      - train.eval_steps=0
+      - train.save_checkpoint=false
+      - train.save_freq=20
+      - resources.timeout_hours=0.25
+      - name=20260727_info_photometric_smoke_b16_s20_seed42
+      - tracking.backend=none
+      - tracking.enable=false
+      - tracking.mode=disabled
+  - config: ../runs/2026-07-27_overnight_information_gain/01_source_gop250_b8.yaml
+    overrides: []
+  - config: ../runs/2026-07-27_overnight_information_gain/02_gop15_b8.yaml
+    overrides: []
+  - config: ../runs/2026-07-27_overnight_information_gain/03_gop15_b16.yaml
+    overrides: []
+  - config: ../runs/2026-07-27_overnight_information_gain/04_gop15_photometric_b16.yaml
+    overrides: []
+  - config: ../runs/2026-07-27_overnight_information_gain/05_gop15_b32.yaml
+    overrides: []

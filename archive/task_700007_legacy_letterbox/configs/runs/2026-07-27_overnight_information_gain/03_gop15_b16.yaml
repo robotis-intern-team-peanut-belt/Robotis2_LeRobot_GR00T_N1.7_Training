@@ -1,0 +1,19 @@
+_base: 00_common.yaml
+name: 20260727_info_gop15_b16_s15000_seed42
+description: Conservative GOP15 batch-16 candidate at 240,000 sampled examples.
+hypothesis: Batch 16 matches GOP15 batch-8 held-out quality with fewer optimizer updates and higher throughput.
+tags: [omx-insert, gop15, batch-16, conservative, seed-42]
+policy:
+  max_steps: 15000
+train:
+  batch_size: 16
+  steps: 15000
+  save_checkpoint: true
+  save_freq: 15000
+  eval_steps: 3750
+tracking:
+  notes: GOP15/batch-16 conservative candidate; compare with 02 at equal sample positions.
+resources:
+  timeout_hours: 2.25
+annotation:
+  notes: Retain the endpoint checkpoint for offline action checks if the held-out gate passes.

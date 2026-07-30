@@ -1,0 +1,19 @@
+_base: 00_common.yaml
+name: 20260727_info_gop15_b32_s7500_seed42
+description: Balanced-throughput GOP15 batch-32 candidate at 240,000 sampled examples.
+hypothesis: Batch 32 matches GOP15 batch-16 held-out quality at the same sample budget while materially increasing throughput.
+tags: [omx-insert, gop15, batch-32, stretch, seed-42]
+policy:
+  max_steps: 7500
+train:
+  batch_size: 32
+  steps: 7500
+  save_checkpoint: true
+  save_freq: 7500
+  eval_steps: 1875
+tracking:
+  notes: GOP15/batch-32 stretch candidate; compare with 02 and 03 at equal sample positions.
+resources:
+  timeout_hours: 1.75
+annotation:
+  notes: Run last. Retain endpoint checkpoint, but do not promote unless held-out and offline gates pass.

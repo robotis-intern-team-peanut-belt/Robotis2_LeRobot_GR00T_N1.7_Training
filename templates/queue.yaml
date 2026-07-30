@@ -1,0 +1,11 @@
+# Sequential run queue template.
+_base: ../base/multi_queue.yaml
+name: TODO_unique_queue_name
+description: TODO ordering and purpose of this queue.
+runs:
+  - config: ../runs/TODO_first_run.yaml
+    overrides: []  # key=value overrides applied only to this queue entry.
+  - config: ../runs/TODO_second_run.yaml
+    overrides:
+      - name=TODO_second_run_variant
+      - train.seed=123

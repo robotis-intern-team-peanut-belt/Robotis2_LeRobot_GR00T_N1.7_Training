@@ -1,0 +1,12 @@
+_base: 01_relarm_seed42.yaml
+name: omx_absolute_b16_h40_s20000_seed42
+description: Sample-matched absolute-action comparison.
+hypothesis: Absolute targets may better preserve the source joint-position command representation.
+tags: [omx-insert, ablation, absolute-actions, seed-42]
+policy:
+  use_relative_actions: false
+  relative_exclude_joints: []
+tracking:
+  notes: Absolute-action OMX Insert comparison.
+annotation:
+  notes: Compare directly with the relative-arm baseline using the same seed, batch, and step count.

@@ -1,0 +1,69 @@
+schema_version: 1
+name: omx_insert
+repo_id: RobotisSW/Task_700007_OMX_Insert_MCAP_lerobot_v30
+revision: e12fb1f9612d82be662815a55fc8ceb3158f1b5d
+download:
+  root: ${training_root}/artifacts/datasets/Task_700007_OMX_Insert_MCAP_lerobot_v30
+prepared:
+  root: ${training_root}/artifacts/datasets/Task_700007_OMX_Insert_MCAP_lerobot_v30_arms16_head-letterbox640x480_taskfix
+  immutable: true
+preparation:
+  script: ${training_root}/archive/omx_insert_letterbox_v1/prepare_lerobot_groot_dataset.sh
+  args: [--crf, "18", --preset, medium]
+  procedure: ${workspace}/docs/archive/2026-07-24_omx_insert_lerobot_groot_dataset_derivation.md
+training:
+  repo_id: local/omx_insert_arms16_letterbox
+  video_backend: torchcodec
+  eval_split: 0.1
+expected:
+  codebase_version: v3.0
+  total_episodes: 95
+  total_frames: 33730
+contract:
+  robot_revision: f2-development-omx-insert
+  embodiment: new_embodiment
+  fps: 15
+  units:
+    state: radians_and_normalized_gripper
+    action: joint_position_targets
+  language:
+    convention: English imperative task instruction
+  source_camera_transform:
+    head: 1280x720 -> 640x360 bicubic -> vertical black pad to 640x480
+    left_wrist: unchanged 640x480
+    right_wrist: unchanged 640x480
+  model_image_transform:
+    image_crop_size: [230, 230]
+    image_target_size: [256, 256]
+    use_albumentations: false
+    letter_box_transform: false
+    interpolation: torchvision_bicubic
+  cameras:
+    - key: observation.images.rgb.cam_head
+      shape: [3, 480, 640]
+    - key: observation.images.rgb.cam_left_wrist
+      shape: [3, 480, 640]
+    - key: observation.images.rgb.cam_right_wrist
+      shape: [3, 480, 640]
+  state:
+    dim: 16
+    names: &joint_order
+      - arm_l_joint1
+      - arm_l_joint2
+      - arm_l_joint3
+      - arm_l_joint4
+      - arm_l_joint5
+      - arm_l_joint6
+      - arm_l_joint7
+      - gripper_l_joint1
+      - arm_r_joint1
+      - arm_r_joint2
+      - arm_r_joint3
+      - arm_r_joint4
+      - arm_r_joint5
+      - arm_r_joint6
+      - arm_r_joint7
+      - gripper_r_joint1
+  action:
+    dim: 16
+    names: *joint_order

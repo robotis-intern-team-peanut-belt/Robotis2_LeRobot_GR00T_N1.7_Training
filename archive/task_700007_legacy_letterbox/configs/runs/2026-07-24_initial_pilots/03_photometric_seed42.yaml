@@ -1,0 +1,28 @@
+_base: 01_relarm_seed42.yaml
+name: omx_relarm_absgrip_photo_b16_h40_s20000_seed42
+description: Mild photometric augmentation pilot.
+hypothesis: Modest appearance changes improve visual robustness without changing task geometry.
+tags: [omx-insert, augmentation, relative-arms, seed-42]
+dataset:
+  image_transforms:
+    enable: true
+    max_num_transforms: 2
+    random_order: true
+    # tfs must be forwarded as one structured value; nested leaf flags are unsupported.
+    tfs:
+      brightness:
+        weight: 1.0
+        type: ColorJitter
+        kwargs: {brightness: [0.8, 1.2]}
+      contrast:
+        weight: 1.0
+        type: ColorJitter
+        kwargs: {contrast: [0.8, 1.2]}
+      saturation:
+        weight: 1.0
+        type: ColorJitter
+        kwargs: {saturation: [0.8, 1.2]}
+tracking:
+  notes: Mild photometric augmentation OMX Insert pilot.
+annotation:
+  notes: Run a bounded parser/GPU smoke test before including this in a long queue.

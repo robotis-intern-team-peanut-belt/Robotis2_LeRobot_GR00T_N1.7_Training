@@ -1,0 +1,7 @@
+# name	action_mode	seed	learning_rate	augmentation	save_frequency
+lerobot-n17_relarm-absgrip_b8_h40_s80000_baseline_seed42	relative	42	1e-4	off	40000
+lerobot-n17_absolute_b8_h40_s80000_ablation_seed42	absolute	42	1e-4	off	40000
+lerobot-n17_relarm-absgrip_b8_h40_s80000_baseline_seed123	relative	123	1e-4	off	80000
+lerobot-n17_relarm-absgrip_aug_b8_h40_s80000_ablation_seed42	relative	42	1e-4	photometric	80000
+lerobot-n17_relarm-absgrip_lr3e-5_b8_h40_s80000_ablation_seed42	relative	42	3e-5	off	80000
+lerobot-n17_absolute_b8_h40_s80000_ablation_seed123	absolute	123	1e-4	off	80000

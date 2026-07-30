@@ -1,0 +1,44 @@
+# Generated training runs, logs, manifests, results, and checkpoints.
+/runs/*
+!/runs/.gitkeep
+
+# Local datasets, selected models, and other large artifacts.
+/artifacts/datasets/*
+!/artifacts/datasets/.gitkeep
+/artifacts/models/*
+!/artifacts/models/.gitkeep
+/artifacts/legacy_omx_insert_python_cache/
+/artifacts/manifests/*
+!/artifacts/manifests/.gitkeep
+/artifacts/reports/*
+!/artifacts/reports/.gitkeep
+
+# Python bytecode and tool caches.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Local Python environments and environment files.
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Editor and operating-system metadata.
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Temporary files.
+*.tmp
+*.temp
+*.bak
+*~

@@ -1,0 +1,8 @@
+# Sequential queue defaults; stop on the first failed run.
+schema_version: 1
+name: replace-me
+description: Sequential GR00T training queue.
+continue_on_failure: false
+min_free_disk_gib: 100
+max_attempts: 1  # No automatic retry of failed training.
+time_budget_hours: 24

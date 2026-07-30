@@ -1,0 +1,10 @@
+_base: 00_common.yaml
+name: 20260727_info_source_gop250_b8_s30000_seed42
+description: Source GOP250 control at batch 8 and 240,000 sampled examples.
+hypothesis: This paired control isolates the learning effect of GOP15 re-encoding.
+tags: [omx-insert, control, source-gop250, batch-8, seed-42]
+dataset_ref: omx_insert
+tracking:
+  notes: Source GOP250/batch-8 control; compare only with 02 at equal steps and samples.
+annotation:
+  notes: No checkpoint retained; held-out curve is the control for GOP15 learning equivalence.

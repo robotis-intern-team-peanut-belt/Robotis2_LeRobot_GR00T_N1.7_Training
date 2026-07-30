@@ -1,0 +1,37 @@
+_base: ../../base/groot_n17.yaml
+name: replace-me-20260727-information-gain
+description: Common contract for the 2026-07-27 matched-sample information-gain campaign.
+hypothesis: Override in each numbered run with exactly one comparison question.
+tags: [omx-insert, "2026-07-27", information-gain, matched-samples]
+dataset_ref: omx_insert_gop15
+dataset:
+  eval_split: 0.1
+  return_uint8: true
+  image_transforms:
+    enable: false
+policy:
+  max_steps: 30000
+train:
+  seed: 42
+  batch_size: 8
+  num_workers: 8
+  steps: 30000
+  save_checkpoint: false
+  save_freq: 30000
+  eval_steps: 7500
+  max_eval_samples: 1000
+  log_freq: 20
+tracking:
+  backend: wandb
+  enable: true
+  entity: robotis-intern-team-peanut-belt
+  project: gr00t-omx-insert
+  mode: online
+  disable_artifact: true
+  notes: 2026-07-27 matched-sample information-gain campaign.
+resources:
+  timeout_hours: 4.25
+annotation:
+  owner: intern-team
+  notes: Campaign base only; launch a numbered child config, never this file directly.
+  evaluation_required: [heldout_imitation, offline]

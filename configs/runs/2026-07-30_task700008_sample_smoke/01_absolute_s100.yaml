@@ -1,0 +1,35 @@
+_base: ../../base/groot_n17.yaml
+name: 20260730_task700008_native_abs_b4_s100
+description: Bounded connection smoke for the verified four-episode native sample.
+hypothesis: The prepared dataset completes 100 finite all-absolute GR00T training steps.
+tags: [task700008, native-camera, gop15, absolute-actions, smoke]
+dataset_ref: omx_insert_f2_native_4ep_sample
+
+policy:
+  use_relative_actions: false
+  relative_exclude_joints: []
+  max_steps: 100
+
+train:
+  seed: 42
+  batch_size: 4
+  num_workers: 4
+  steps: 100
+  save_checkpoint: true
+  save_freq: 100
+  eval_steps: 0
+  log_freq: 10
+
+tracking:
+  backend: none
+  enable: false
+  mode: disabled
+
+resources:
+  min_free_disk_gib: 100
+  timeout_hours: 1
+
+annotation:
+  owner: intern-team
+  notes: Plumbing only; four episodes and no human success verdict cannot establish policy quality.
+  evaluation_required: [decode, finite_loss, processor_artifacts]

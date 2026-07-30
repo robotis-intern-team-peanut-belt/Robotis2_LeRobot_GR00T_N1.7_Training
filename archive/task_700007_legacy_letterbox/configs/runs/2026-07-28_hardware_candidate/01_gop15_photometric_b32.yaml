@@ -1,0 +1,55 @@
+_base: ../../base/groot_n17.yaml
+name: 20260728_hw_candidate_gop15_photo_b32_s20000_seed42
+description: Full-budget OMX hardware-integration candidate using GOP15, photometric augmentation, and batch 32.
+hypothesis: The combined GOP15/photometric/batch-32 recipe preserves or improves imitation quality while producing a substantially faster full-budget policy.
+tags: [omx-insert, "2026-07-28", hardware-candidate, gop15, photometric, batch-32, seed-42]
+dataset_ref: omx_insert_gop15
+dataset:
+  eval_split: 0.1
+  return_uint8: true
+  image_transforms:
+    enable: true
+    max_num_transforms: 2
+    random_order: true
+    tfs:
+      brightness:
+        weight: 1.0
+        type: ColorJitter
+        kwargs: {brightness: [0.8, 1.2]}
+      contrast:
+        weight: 1.0
+        type: ColorJitter
+        kwargs: {contrast: [0.8, 1.2]}
+      saturation:
+        weight: 1.0
+        type: ColorJitter
+        kwargs: {saturation: [0.8, 1.2]}
+policy:
+  max_steps: 20000
+train:
+  seed: 42
+  batch_size: 32
+  num_workers: 8
+  steps: 20000
+  save_checkpoint: true
+  # Retain a 320k-sample rollback and the 640k-sample endpoint.
+  save_freq: 10000
+  # Evaluate at 160k, 320k, 480k, and 640k samples.
+  eval_steps: 5000
+  max_eval_samples: 1000
+  log_freq: 20
+tracking:
+  backend: wandb
+  enable: true
+  entity: robotis-intern-team-peanut-belt
+  project: gr00t-omx-insert
+  mode: online
+  disable_artifact: true
+  notes: Full-budget GOP15 + photometric + batch-32 hardware-integration candidate; offline gates required before robot use.
+resources:
+  min_free_disk_gib: 100
+  timeout_hours: 5.5
+annotation:
+  owner: intern-team
+  notes: Training output is an offline candidate only. Compare 10k/20k checkpoints with the weekend primary and run repeated stochastic-loss plus offline-action gates before Jetson or robot use.
+  evaluation_required: [repeated_heldout, offline, shadow, guarded_hardware]

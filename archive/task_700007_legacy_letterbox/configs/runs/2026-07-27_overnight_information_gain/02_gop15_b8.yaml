@@ -1,0 +1,11 @@
+_base: 00_common.yaml
+name: 20260727_info_gop15_b8_s30000_seed42
+description: GOP15 treatment at batch 8 and 240,000 sampled examples.
+hypothesis: GOP15 preserves held-out imitation quality while improving input throughput.
+tags: [omx-insert, gop15, batch-8, seed-42]
+tracking:
+  notes: GOP15/batch-8 treatment; compare with 01 to isolate re-encoding.
+resources:
+  timeout_hours: 3.4
+annotation:
+  notes: No checkpoint retained; this run is shared by the GOP and batch-size comparisons.

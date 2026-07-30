@@ -1,0 +1,29 @@
+# Ready-to-train LeRobot v3 dataset registration template.
+schema_version: 1
+name: TODO_dataset_name
+repo_id: TODO_org/TODO_hub_dataset
+# Exact 40-character immutable source commit; never use a moving branch.
+revision: 0000000000000000000000000000000000000000
+
+download:
+  root: ${training_root}/artifacts/datasets/TODO_dataset_name
+prepared:
+  # Equal paths mean no preparation derivative is required.
+  root: ${training_root}/artifacts/datasets/TODO_dataset_name
+  immutable: true
+
+training:
+  repo_id: local/TODO_dataset_name
+  video_backend: torchcodec
+  eval_split: 0.1
+
+contract:
+  # Read shapes/order from metadata; review physical semantics manually.
+  auto_from_metadata: true
+  robot_revision: TODO_exact_robot_revision
+  embodiment: new_embodiment
+  units:
+    state: radians_and_normalized_gripper
+    action: absolute_joint_position_targets
+  language:
+    convention: English task text selected by each frame's task_index

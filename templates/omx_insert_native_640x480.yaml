@@ -1,0 +1,90 @@
+# Native 640x480/15-fps OMX Insert registration template.
+schema_version: 1
+name: TODO_omx_insert_native
+repo_id: TODO_org/TODO_dataset
+revision: 0000000000000000000000000000000000000000  # Immutable converter source commit.
+download:
+  root: ${training_root}/artifacts/datasets/TODO_omx_insert_native_source
+  manifest: ${training_root}/artifacts/manifests/TODO_omx_insert_native_SHA256SUMS.txt
+prepared:
+  root: ${training_root}/artifacts/datasets/TODO_omx_insert_native_arms16_gop15
+  immutable: true
+preparation:
+  script: ${training_root}/scripts/prepare_omx_insert_native.sh
+  inject_source_provenance: true
+  args:
+    - --gop-size
+    - "15"
+    - --crf
+    - "18"
+    - --preset
+    - medium
+  procedure: TODO_paired_timestamped_preparation_document
+validation:
+  caption_audit:
+    enabled: true
+    profile: omx_insert
+    language_mode: full_episode
+    expected_subtasks_per_episode: 5
+    expected_overall_task: TODO_approved_full_episode_instruction
+    output: ${training_root}/artifacts/reports/TODO_omx_insert_native_caption_audit.json
+
+training:
+  repo_id: local/TODO_omx_insert_native_arms16_gop15
+  video_backend: torchcodec
+  eval_split: 0.1
+
+expected:
+  codebase_version: v3.0
+  total_episodes: TODO_verified_episode_count
+  total_frames: TODO_verified_frame_count
+
+contract:
+  robot_revision: TODO_exact_f2_robot_revision
+  embodiment: new_embodiment
+  fps: 15
+  units:
+    state: radians_and_normalized_gripper
+    action: absolute_joint_position_targets
+  language:
+    convention: One full-episode task via task_index; five ordered subtasks are annotations only
+    instruction: TODO_approved_full_episode_instruction
+  source_camera_transform:
+    head: native 640x480 at 15 fps; identity
+    left_wrist: native 640x480 at 15 fps; identity
+    right_wrist: native 640x480 at 15 fps; identity
+  video_encoding:
+    geometry: identity
+    codec: h264
+    gop_size: 15
+    crf: 18
+    preset: medium
+  cameras:
+    - key: observation.images.rgb.cam_head
+      shape: [3, 480, 640]
+    - key: observation.images.rgb.cam_left_wrist
+      shape: [3, 480, 640]
+    - key: observation.images.rgb.cam_right_wrist
+      shape: [3, 480, 640]
+  state:
+    dim: 16
+    names: &joint_order
+      - arm_l_joint1
+      - arm_l_joint2
+      - arm_l_joint3
+      - arm_l_joint4
+      - arm_l_joint5
+      - arm_l_joint6
+      - arm_l_joint7
+      - gripper_l_joint1
+      - arm_r_joint1
+      - arm_r_joint2
+      - arm_r_joint3
+      - arm_r_joint4
+      - arm_r_joint5
+      - arm_r_joint6
+      - arm_r_joint7
+      - gripper_r_joint1
+  action:
+    dim: 16
+    names: *joint_order

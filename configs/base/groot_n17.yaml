@@ -1,0 +1,118 @@
+# GR00T N1.7 defaults for native-camera F2 training on this workstation.
+schema_version: 1
+backend: lerobot
+name: replace-me
+description: Native-camera, absolute-action LeRobot GR00T N1.7 defaults.
+hypothesis: Override in each run with a falsifiable experiment hypothesis.
+tags: [groot-n17]
+
+dataset:
+  # Decode as uint8 before image transforms; normalize with ImageNet statistics.
+  return_uint8: true
+  use_imagenet_stats: true
+  image_transforms:
+    enable: true
+    max_num_transforms: 2
+    random_order: true
+    # Apply up to two mild colour/exposure transforms per image.
+    tfs:
+      brightness:
+        weight: 1.0
+        type: ColorJitter
+        kwargs: {brightness: [0.8, 1.2]}
+      contrast:
+        weight: 1.0
+        type: ColorJitter
+        kwargs: {contrast: [0.8, 1.2]}
+      saturation:
+        weight: 1.0
+        type: ColorJitter
+        kwargs: {saturation: [0.8, 1.2]}
+
+policy:
+  type: groot
+  device: cuda
+  base_model_path: nvidia/GR00T-N1.7-3B
+  embodiment_tag: new_embodiment
+  # Predict 40 actions and return 12; this is not a robot deployment approval.
+  chunk_size: 40
+  n_action_steps: 12
+  # Freeze backbones; train task-specific projector, diffusion, and VLLN modules.
+  tune_llm: false
+  tune_visual: false
+  tune_projector: true
+  tune_diffusion_model: true
+  tune_vlln: true
+  tune_top_llm_layers: 0
+  # Use BF16 compute with trainable parameters stored in FP32.
+  use_bf16: true
+  model_params_fp32: true
+  use_flash_attention: false
+  # Train the recorded absolute joint-position targets without delta conversion.
+  use_relative_actions: false
+  relative_exclude_joints: []
+  optimizer_lr: 1.0e-4
+  optimizer_betas: [0.9, 0.999]
+  optimizer_eps: 1.0e-8
+  optimizer_weight_decay: 1.0e-5
+  warmup_ratio: 0.05
+  max_steps: 20000
+  push_to_hub: false
+  repo_id: local/${name}
+
+train:
+  seed: 42
+  # Balanced-throughput setting measured on the B200 MIG.
+  batch_size: 32
+  num_workers: 8
+  prefetch_factor: 2
+  persistent_workers: true
+  # 20k × batch 32 gives the previous 640k-sample starting budget.
+  steps: 20000
+  save_checkpoint: true
+  # Save every 10k steps and evaluate every 5k steps.
+  save_freq: 10000
+  use_policy_training_preset: true
+  env_eval_freq: 0
+  eval_steps: 5000
+  max_eval_samples: 1000
+  log_freq: 20
+
+# Used only when use_policy_training_preset is false.
+optimizer:
+  type: adamw
+  lr: 1.0e-4
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+  weight_decay: 1.0e-5
+scheduler:
+  type: cosine_decay_with_warmup
+  warmup_ratio: 0.05
+
+# Tracking is opt-in per run.
+tracking:
+  backend: none
+  enable: false
+  entity: null
+  project: null
+  mode: disabled
+  disable_artifact: true
+  notes: ${name}; registry-managed LeRobot GR00T N1.7 run.
+
+resources:
+  min_free_disk_gib: 100
+  timeout_hours: 24
+  expected_gpu: NVIDIA B200 MIG 4g.90gb
+  # Reject a launch if the visible GPU is smaller than this.
+  memory_guard_gib: 80
+artifacts:
+  required_checkpoint_files:
+    - config.json
+    - model.safetensors
+    - policy_preprocessor.json
+    - policy_postprocessor.json
+    - train_config.json
+annotation:
+  owner: intern-team
+  notes: Override with the experiment rationale, decision criteria, and caveats.
+  evaluation_required: [offline, shadow, guarded_hardware]
