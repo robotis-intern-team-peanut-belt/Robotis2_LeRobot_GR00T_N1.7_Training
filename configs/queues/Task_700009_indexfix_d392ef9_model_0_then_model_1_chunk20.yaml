@@ -1,0 +1,8 @@
+_base: ../base/multi_queue.yaml
+name: Task_700009_indexfix_d392ef9_model_0_then_model_1_chunk20
+description: 'Train the fresh index-correct chunk-40 baseline, then the matched chunk-20 comparison.'
+runs:
+  - config: ../runs/Task_700009_indexfix_d392ef9_model_0.yaml
+    overrides: []
+  - config: ../runs/Task_700009_indexfix_d392ef9_model_1_chunk20.yaml
+    overrides: []

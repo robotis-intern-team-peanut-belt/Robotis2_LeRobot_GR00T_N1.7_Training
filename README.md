@@ -53,73 +53,99 @@ training/
 └── tests/
 ```
 
-## 1. Connect Hugging Face and register the dataset
+## 1. Choose one source workflow and register
 
-Run commands from the workspace root. Public datasets can be read anonymously. For
-a private dataset, authenticate once; use the token prompt or `HF_TOKEN`, and never
-write a token into a YAML file:
+The server supports two distinct sources. Both end in a tracked YAML under
+`training/configs/datasets/`, and both use the same caption audit, immutable
+16-D/GOP15 preparation, and decoded validation after registration. Never reuse a
+registration name for different bytes or a different source revision.
+
+### Workflow A: robot uploads to Hugging Face, server downloads
+
+The robot-side Hub upload is outside this guide. After the dataset exists on the
+Hub, run these commands from the server workspace root. Public datasets need no
+login; for a private dataset, authenticate via the token prompt or `HF_TOKEN` and
+never store a token in YAML:
 
 ```bash
 hf auth login
 hf auth whoami
-```
-
-For another dataset from the same F2 robot/task lineage, the normal registration
-needs only a local name and the Hugging Face dataset repository:
-
-```bash
 training/grootctl dataset register-hf <dataset_name> --repo-id User/Repo
 ```
 
-The command prints the pinned Hub commit, robot revision, task, where each value came
-from, and the next commands. Before using it, you can inspect the defaults:
+`register-hf` resolves `main` to the exact immutable 40-character Hub commit. A
+branch, tag, or commit can be given explicitly with `--revision`. The server does
+not trust a moving branch after registration.
+
+### Workflow B: copy converted LeRobot v3.0 directly from the robot
+
+After Cyclo finishes conversion on the robot, copy the completed LeRobot directory
+to a new server directory. A normal `rsync` is sufficient; no Hugging Face upload,
+checksum manifest, source commit, or UTC handoff ID is required.
+
+For example, on the robot:
+
+```bash
+rsync -a --partial -e 'ssh -i /home/robotis/Robotis2_key -p 34301' \
+  /home/robotis/cyclo_intelligence/docker/workspace/lerobot/<dataset_name>/ \
+  k_humanoid_3@59.150.32.1:/NHNHOME/WORKSPACE/26motir001_D/intern_team/training/artifacts/datasets/<new_server_dataset_directory>/
+```
+
+Use a new destination directory rather than mixing a new dataset into an older
+one. Once `rsync` finishes, register it on Robotis2:
+
+```bash
+training/grootctl dataset register-local <dataset_name> \
+  --source-root /NHNHOME/WORKSPACE/26motir001_D/intern_team/training/artifacts/datasets/<new_server_dataset_directory>
+```
+
+That is the complete required registration command. It checks that the directory
+and LeRobot `meta/info.json` exist, records the observed version/episode/frame
+counts and current robot/task defaults, and creates
+`training/configs/datasets/<dataset_name>.yaml`. It does not calculate or compare a
+producer checksum.
+
+If useful, ordinary provenance notes may be added without a naming convention:
+
+```bash
+training/grootctl dataset register-local <dataset_name> \
+  --source-root <server_dataset_directory> \
+  --source-revision <optional_label_or_commit> \
+  --handoff <optional_existing_notes_file>
+```
+
+The earlier Task 700008 sample came from
+`/home/robotis/cyclo_intelligence/docker/workspace/lerobot/Task_700008_OMX_Insert_F2_Intern_MCAP_lerobot_v30`.
+That historical transfer used a stricter partial-directory and checksum procedure,
+but those steps are not required for routine direct registration now.
+
+### Shared registration options
+
+Inspect the current F2 robot/task defaults before either workflow:
 
 ```bash
 training/grootctl dataset defaults
 ```
 
-The defaults are stored with comments and their evidence in
-`training/configs/base/f2_omx_insert_contract.yaml`. For the usual same-robot,
-same-task dataset, leave them unchanged.
+The defaults and evidence are in
+`training/configs/base/f2_omx_insert_contract.yaml`. For a same-robot, same-task
+dataset, omit `--robot-revision` and `--task`. Override them when the dataset uses a
+different contract. `--task` is the exact full-episode instruction delivered to
+GR00T.
 
-The arguments mean:
+For Hub registration, `--repo-id` must identify a dataset repository and
+`--revision` is a Hub branch/tag/commit. For direct registration,
+`--source-revision` and `--handoff` are optional notes; neither is required or
+validated against the copied bytes.
 
-- `dataset_name` is a short local name used by later commands. Choose a new name for
-  every distinct Hub dataset/commit.
-- `--repo-id User/Repo` is the Hugging Face dataset repository, not a model repository.
-- `--revision` is a Hugging Face branch, tag, or commit—not a robot revision. Usually
-  omit it: it defaults to `main`, which `grootctl` immediately resolves and records as
-  an immutable 40-character commit.
-- `--robot-revision` identifies the robot-side source/config that recorded the data.
-  Usually omit it: the current approved F2 value comes from the defaults file. Override
-  it only when a producer handoff explicitly gives a different revision.
-- `--task` is the exact full-episode instruction supplied to GR00T. Usually omit it for
-  the same OMX Insert task. Override it only when the task contract truly changed.
-
-An unusual dataset with a different producer contract can override the optional
-values explicitly:
-
-```bash
-training/grootctl dataset register-hf <dataset_name> \
-  --repo-id User/Repo \
-  --revision <branch-tag-or-commit> \
-  --robot-revision <revision-from-producer-handoff> \
-  --task "<approved full-episode instruction>"
-```
-
-Registration creates `training/configs/datasets/<dataset_name>.yaml`; it does not
-transfer or process data. The YAML records whether robot revision/task came from the
-project defaults or command line, plus the pinned Hub commit and current F2 contract:
-three native 640×480/15 fps cameras, absolute named 16-D state/action, GOP15 processing,
-and five ordered subtask annotations. Review it with:
+Both commands create `training/configs/datasets/<dataset_name>.yaml` without
+processing the source. Review it before continuing:
 
 ```bash
 training/grootctl dataset show <dataset_name>
 ```
 
-Do not point an existing registration at replacement data; use a new dataset name.
-
-## 2. Download, audit, prepare, and validate
+## 2. Acquire or recheck the source, audit, prepare, and validate
 
 The normal command is:
 
@@ -127,9 +153,10 @@ The normal command is:
 training/grootctl dataset pipeline <dataset_name>
 ```
 
-It runs the four stages below in order and stops at the first failure. It is safe to
-repeat: an existing source or derivative is reused only when its provenance marker
-or derivation receipt matches the registration.
+It runs source acquisition, dataset preflight, task-specific caption audit,
+preparation, and prepared-data validation in order, stopping at the first failure. It
+is safe to repeat: a registered local source is reused, and an existing prepared
+derivative is reused only when its derivation receipt matches the registration.
 
 ### `dataset download`
 
@@ -137,16 +164,37 @@ or derivation receipt matches the registration.
 training/grootctl dataset download <dataset_name>
 ```
 
-This reads `repo_id` and the pinned commit from the dataset YAML, downloads that exact
-Hub snapshot into `training/artifacts/datasets/<dataset_name>_source`, and writes:
+For a Hub registration, this reads `repo_id` and the pinned commit, downloads that
+exact snapshot into `training/artifacts/datasets/<dataset_name>_source`, and writes:
 
 - a per-file SHA-256 manifest under `training/artifacts/manifests/`;
 - `.groot_registry_download.json` inside the source, recording repository, commit,
   manifest digest, file count, and byte count.
 
-It refuses a non-empty directory without a matching marker, which prevents a partial
-or unrelated upload from being mistaken for the registered dataset. It does not edit
-the downloaded LeRobot files.
+For a direct registration, it performs no network or checksum operation. It confirms
+that the directory is the one recorded by `register-local` and reuses it.
+
+Neither mode edits the LeRobot payload. The later preflight, caption, preparation,
+and decode stages still validate the dataset structure needed by this training
+pipeline.
+
+### Dataset preflight
+
+Run the detection-only check directly against the registered source or prepared
+training derivative:
+
+```bash
+training/grootctl dataset preflight <dataset_name> --stage source
+training/grootctl dataset preflight <dataset_name>
+```
+
+It rejects leading/trailing or repeated caption spaces, tabs, newlines, non-breaking
+spaces, and other non-ASCII whitespace across vocabularies, episode metadata, and
+annotation JSON. It also verifies globally contiguous frame indices, per-episode
+frame indices, declared counts, and that every episode's metadata length and global
+`dataset_from_index`/`dataset_to_index` bounds match its actual data rows. It reports
+the first exact location and never edits data. `dataset pipeline`, `dataset validate`,
+`train check`, and `train start` run this guard automatically.
 
 ### Caption audit (`audit_omx_insert_captions.sh`)
 
@@ -182,7 +230,7 @@ training/grootctl dataset prepare <dataset_name>
 ```
 
 This creates a separate immutable derivative ending in `_arms16_gop15`; it never
-modifies the Hub source. The processor:
+modifies the registered Hub or direct-transfer source. The processor:
 
 - selects the exact named 16-D dual-arm/gripper state and absolute action fields;
 - verifies all three camera features and encoded streams are 640×480 at 15 fps;
@@ -226,9 +274,16 @@ training/grootctl train status <run_name>
 
 This creates `training/configs/runs/<run_name>.yaml`. The file is intentionally small:
 it points to the dataset registration and inherits the reviewed defaults from
-`configs/base/groot_n17.yaml`. It does not launch training. The generated description,
-hypothesis, tags, and absolute-action settings form a usable baseline. Edit the human
-fields to add dataset-specific goals and evaluation criteria; ordinary baseline use
+`configs/base/groot_n17.yaml`. It does not launch training. Replace the generated
+`REPLACE ME` description, hypothesis, and annotation notes with dataset-specific
+goals, a falsifiable expectation, evaluation criteria, caveats, and intended
+comparisons. The generated owner is `intern-team`.
+
+`train init` does not emit run-level tags. The resolved run inherits
+`tags: [groot-n17]` from the base. Tags are registry metadata retained in the
+resolved configuration and covered by its manifest hash; they are not passed to `lerobot-train`.
+YAML lists replace inherited lists rather than adding to them, so add a run-level
+`tags` list only when deliberately replacing the base tags. Ordinary baseline use
 does not require copying policy or optimizer settings into the run file.
 
 The defaults are absolute actions, GOP15/native-camera input, photometric augmentation,
@@ -245,10 +300,10 @@ train:
 ### `train check`
 
 This resolves the base YAML and dataset registration, injects the exact camera and
-joint contract, rejects inconsistent steps/learning rates/action settings, checks the
-dataset and free disk, renders the final `lerobot-train` command, and prints the
-future tmux/log/status commands. It is a dry run: no model is loaded, no GPU training
-starts, and no tmux session is created.
+joint contract, reruns the detection-only dataset preflight, rejects inconsistent
+steps/learning rates/action settings, checks free disk, renders the final
+`lerobot-train` command, and prints future tmux/log/status commands. It is a dry run:
+no model is loaded, no GPU training starts, and no tmux session is created.
 
 Run `train check` again after every YAML edit.
 
@@ -275,7 +330,9 @@ a normal wrapper exit records `completed` or `failed`, the exit code, timing, fi
 logged loss/throughput/memory, and the last saved checkpoint. For live progress, use
 the `tail -f` or `tmux attach` command printed by `train start`.
 
-Tracking is disabled by default. To use Weights & Biases, activate LeRobot and log in:
+W&B tracking is enabled by default for the
+[`robotis-intern-team-peanut-belt/gr00t-omx-insert`](https://wandb.ai/robotis-intern-team-peanut-belt/gr00t-omx-insert)
+project. Before the first tracked launch, activate LeRobot and authenticate locally:
 
 ```bash
 cd /NHNHOME/WORKSPACE/26motir001_D/intern_team/lerobot
@@ -283,9 +340,49 @@ source ./activate_lerobot.sh
 wandb login
 ```
 
-Then set `tracking.backend: wandb`, `tracking.enable: true`, `tracking.mode: online`,
-and the project/entity in the run YAML before `train check`. Hugging Face and W&B
-authentication are separate. Never store either token in tracked configuration.
+`train check` renders the inherited entity, project, and online mode without contacting
+W&B. `train start` requires valid W&B authentication and network access. To disable
+tracking deliberately for a bounded smoke or other local-only run, add:
+
+```yaml
+tracking:
+  backend: none
+  enable: false
+  mode: disabled
+```
+
+Hugging Face and W&B authentication are separate. Never store either token in tracked
+configuration.
+
+### Sequential multi-run queues
+
+Validate a queue and every resolved run without launching training:
+
+```bash
+training/grootctl queue Task_700009_model_0_then_model_1_chunk20 --dry-run
+```
+
+The queue runner is foreground-only. For an SSH-safe launch, run it inside tmux:
+
+```bash
+cd /NHNHOME/WORKSPACE/26motir001_D/intern_team
+tmux new-session -s task700009-chunk-compare
+# After tmux opens:
+training/grootctl queue Task_700009_model_0_then_model_1_chunk20
+# Detach without stopping it: Ctrl-b, then d
+```
+
+Monitor the queue state and the active attempt from another shell:
+
+```bash
+cat training/runs/_queues/Task_700009_model_0_then_model_1_chunk20/queue_status.yaml
+tail -f training/runs/<active_run_name>/attempt-1/train.log
+```
+
+The inherited multi-queue defaults allow one attempt per run, require 100 GiB free,
+use a 24-hour queue budget, and stop if the first run fails. The current queue runner
+has no dedicated stop command; do not kill its tmux session casually while a trainer
+may still be active.
 
 The lower-level `config`, `run`, `run-tmux`, `queue`, and `result` commands remain
 available for experiments and automation; new operators normally need only the

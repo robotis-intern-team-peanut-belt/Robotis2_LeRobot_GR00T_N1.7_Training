@@ -57,9 +57,11 @@ def test_config_init_creates_small_editable_override(
     assert value["_base"] == "../base/groot_n17.yaml"
     assert value["dataset_ref"] == "test_dataset"
     assert "dataset" not in value
-    assert value["tags"] == ["baseline", "absolute-actions"]
-    assert "TODO" not in value["description"]
-    assert "TODO" not in value["hypothesis"]
+    assert "tags" not in value
+    assert value["description"].startswith("REPLACE ME:")
+    assert value["hypothesis"].startswith("REPLACE ME:")
+    assert value["annotation"]["owner"] == "intern-team"
+    assert value["annotation"]["notes"].startswith("REPLACE ME:")
     with pytest.raises(registry.RegistryError, match="already exists"):
         registry.init_config("new_run", "test_dataset")
 
@@ -272,6 +274,67 @@ def test_register_hf_parser_needs_only_name_and_repo() -> None:
     assert args.task is None
 
 
+def test_register_local_needs_only_name_and_source_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = dataset(tmp_path / "payload")
+    registrations = tmp_path / "registrations"
+    monkeypatch.setattr(registry, "DATASETS", registrations)
+    monkeypatch.setattr(registry, "ROOT", tmp_path / "training")
+
+    created = registry.register_local_omx_dataset(
+        "campaign_local", source, None, None, tmp_path / "prepared",
+    )
+    value = yaml.safe_load(created.read_text())
+    marker = yaml.safe_load(
+        (source / ".groot_registry_download.json").read_text()
+    )
+    assert value["repo_id"] == "local/campaign_local"
+    assert value["revision"] == "local"
+    assert value["registration"]["source_kind"] == "direct_local_directory"
+    assert "source_manifest_sha256" not in value
+    assert value["expected"]["codebase_version"] == "v3.0"
+    assert marker == {
+        "repo_id": "local/campaign_local",
+        "revision": "local",
+        "source_kind": "direct_local_directory",
+    }
+    assert registry.download_dataset(registry.dataset_spec(created)) == source
+
+    (source / "meta/info.json").write_text("{}")
+    assert registry.download_dataset(registry.dataset_spec(created)) == source
+
+
+def test_register_local_accepts_optional_free_form_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = dataset(tmp_path / "payload")
+    handoff = tmp_path / "notes.md"
+    handoff.write_text("optional notes\n")
+    monkeypatch.setattr(registry, "DATASETS", tmp_path / "registrations")
+    monkeypatch.setattr(registry, "ROOT", tmp_path / "training")
+
+    created = registry.register_local_omx_dataset(
+        "campaign_local", source, None, None,
+        source_revision="robot-copy-july", handoff=handoff,
+    )
+    value = yaml.safe_load(created.read_text())
+    assert value["revision"] == "robot-copy-july"
+    assert value["registration"]["handoff"] == str(handoff.resolve())
+
+
+def test_register_local_parser_needs_only_name_and_source_root() -> None:
+    args = registry.parser().parse_args([
+        "dataset", "register-local", "campaign",
+        "--source-root", "/srv/dataset",
+    ])
+    assert args.verb == "register-local"
+    assert args.source_revision is None
+    assert args.handoff is None
+    assert args.robot_revision is None
+    assert args.task is None
+
+
 def test_register_hf_uses_visible_project_defaults(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -405,6 +468,11 @@ def test_dataset_pipeline_runs_fail_closed_stages_in_order(
         registry, "download_dataset", lambda data: calls.append("download") or tmp_path / "source"
     )
     monkeypatch.setattr(
+        registry,
+        "preflight_dataset_root",
+        lambda root: calls.append(("preflight", root.name)) or {"ready": True},
+    )
+    monkeypatch.setattr(
         registry, "audit_dataset_captions", lambda data: calls.append("audit") or {"ready": True}
     )
     monkeypatch.setattr(
@@ -414,5 +482,19 @@ def test_dataset_pipeline_runs_fail_closed_stages_in_order(
         registry, "validate_dataset", lambda data, decode: calls.append(("validate", decode)) or {"ok": True}
     )
     report = registry.dataset_pipeline({"name": "campaign", "revision": "a" * 40})
-    assert calls == ["download", "audit", "prepare", ("validate", True)]
+    assert calls == [
+        "download",
+        ("preflight", "source"),
+        "audit",
+        "prepare",
+        ("validate", True),
+    ]
     assert report["validation"] == {"ok": True}
+
+
+def test_dataset_preflight_parser_selects_source_stage() -> None:
+    args = registry.parser().parse_args(
+        ["dataset", "preflight", "campaign", "--stage", "source"]
+    )
+    assert args.verb == "preflight"
+    assert args.stage == "source"

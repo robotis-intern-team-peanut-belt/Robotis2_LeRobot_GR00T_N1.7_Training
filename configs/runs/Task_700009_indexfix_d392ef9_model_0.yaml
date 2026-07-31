@@ -1,0 +1,9 @@
+_base: ../base/groot_n17.yaml
+name: Task_700009_indexfix_d392ef9_model_0
+description: 'Fresh chunk-40 baseline for the regenerated 98-episode Task 700009 dataset with corrected global episode bounds and captions.'
+hypothesis: 'The regenerated index-correct dataset will complete every scheduled held-out evaluation without an index-query failure; chunk 40 provides the matched baseline for the chunk-20 comparison.'
+dataset_ref: Task_700009_indexfix_d392ef9_captionfix_v1
+
+annotation:
+  owner: intern-team
+  notes: 'Fresh run only: do not resume or reuse outputs from the failed Task_700009_model_0 attempt.'

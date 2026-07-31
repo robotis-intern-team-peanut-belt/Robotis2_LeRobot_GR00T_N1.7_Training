@@ -89,13 +89,13 @@ scheduler:
   type: cosine_decay_with_warmup
   warmup_ratio: 0.05
 
-# Tracking is opt-in per run.
+# Track inherited runs in the established team project by default.
 tracking:
-  backend: none
-  enable: false
-  entity: null
-  project: null
-  mode: disabled
+  backend: wandb
+  enable: true
+  entity: robotis-intern-team-peanut-belt
+  project: gr00t-omx-insert
+  mode: online
   disable_artifact: true
   notes: ${name}; registry-managed LeRobot GR00T N1.7 run.
 

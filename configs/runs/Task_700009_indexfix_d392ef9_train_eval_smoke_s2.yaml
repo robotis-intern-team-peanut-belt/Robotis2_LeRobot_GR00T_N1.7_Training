@@ -1,0 +1,34 @@
+_base: ../base/groot_n17.yaml
+name: Task_700009_indexfix_d392ef9_train_eval_smoke_s2
+description: 'Bounded production-shape train/eval smoke for the regenerated Task 700009 dataset.'
+hypothesis: 'Two finite chunk-40 training steps and real held-out evaluation batches complete without an index-query failure on the regenerated dataset.'
+tags: [task700009, indexfix, native-camera, gop15, absolute-actions, train-eval-smoke]
+dataset_ref: Task_700009_indexfix_d392ef9_captionfix_v1
+
+policy:
+  chunk_size: 40
+  max_steps: 2
+
+train:
+  seed: 42
+  batch_size: 32
+  num_workers: 8
+  steps: 2
+  save_checkpoint: false
+  eval_steps: 1
+  max_eval_samples: 32
+  log_freq: 1
+
+tracking:
+  backend: none
+  enable: false
+  mode: disabled
+
+resources:
+  min_free_disk_gib: 100
+  timeout_hours: 1
+
+annotation:
+  owner: intern-team
+  notes: 'Detection-only gate for real train and held-out delta-window loading; not a model-quality result.'
+  evaluation_required: [source_preflight, prepared_preflight, real_train_batch, real_eval_batch, finite_loss]

@@ -1,0 +1,12 @@
+_base: ../base/groot_n17.yaml
+name: Task_700009_model_1_chunk20
+description: 'Second training with the 98 episode dataset using chunk size 20.'
+hypothesis: 'Compare model chunk size 20 against the default chunk size 40.'
+dataset_ref: Task_700009
+
+policy:
+  chunk_size: 20
+
+annotation:
+  owner: intern-team
+  notes: 'Matches Task_700009_model_0 except policy.chunk_size=20.'

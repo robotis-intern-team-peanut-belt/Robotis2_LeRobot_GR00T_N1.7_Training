@@ -1,0 +1,12 @@
+_base: ../base/groot_n17.yaml
+name: Task_700009_indexfix_d392ef9_model_1_chunk20
+description: 'Fresh chunk-20 comparison for the regenerated 98-episode Task 700009 dataset with corrected global episode bounds and captions.'
+hypothesis: 'Holding the regenerated dataset and inherited training settings constant, chunk size 20 will be compared with the chunk-40 baseline on held-out loss and downstream offline evaluation.'
+dataset_ref: Task_700009_indexfix_d392ef9_captionfix_v1
+
+policy:
+  chunk_size: 20
+
+annotation:
+  owner: intern-team
+  notes: 'Matches Task_700009_indexfix_d392ef9_model_0 except policy.chunk_size=20; fresh run only.'

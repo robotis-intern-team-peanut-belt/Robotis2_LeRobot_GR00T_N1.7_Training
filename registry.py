@@ -124,7 +124,7 @@ def sha256_file(path: Path) -> str:
 
 
 def payload_manifest(root: Path) -> tuple[str, str, int, int]:
-    """Hash Hub payload files while excluding local cache/registry metadata."""
+    """Hash source payload files while excluding local cache/registry metadata."""
     lines: list[str] = []
     count = size = 0
     for path in sorted(item for item in root.rglob("*") if item.is_file()):
@@ -328,7 +328,9 @@ def validate(data: Mapping[str, Any], source: Path, require_dataset: bool, launc
     if memory_guard is not None and float(memory_guard) <= 0:
         raise RegistryError(f"{source}: memory_guard_gib must be positive")
     if require_dataset:
-        validate_contract(data, info(Path(str(dataset["root"]))), source)
+        dataset_root = Path(str(dataset["root"]))
+        validate_contract(data, info(dataset_root), source)
+        preflight_dataset_root(dataset_root)
 
 
 def dataset_defaults(reference: str) -> dict[str, Any]:
@@ -868,8 +870,15 @@ def dataset_spec(reference: str | Path) -> dict[str, Any]:
     for key in ("name", "repo_id", "revision", "download", "prepared", "contract"):
         if key not in data:
             raise RegistryError(f"{path}: missing {key}")
-    if data.get("schema_version") != 1 or not re.fullmatch(r"[0-9a-f]{40}", str(data["revision"])):
-        raise RegistryError(f"{path}: schema must be 1 and revision a pinned SHA")
+    if data.get("schema_version") != 1:
+        raise RegistryError(f"{path}: schema must be 1")
+    revision = str(data["revision"])
+    source_kind = data.get("registration", {}).get("source_kind")
+    if source_kind == "direct_local_directory":
+        if not revision:
+            raise RegistryError(f"{path}: local source label must be non-empty")
+    elif not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise RegistryError(f"{path}: revision must be a pinned SHA")
     return data
 
 
@@ -882,6 +891,7 @@ def validate_dataset(data: Mapping[str, Any], decode: bool) -> dict[str, Any]:
             raise RegistryError(f"{root}: {key} mismatch")
     contract = resolved_contract(data)
     validate_contract({"contract": contract}, metadata, root)
+    preflight = preflight_dataset_root(root)
     decoded = None
     if decode:
         try:
@@ -903,7 +913,19 @@ def validate_dataset(data: Mapping[str, Any], decode: bool) -> dict[str, Any]:
     return {"root": str(root), "metadata": {
         key: metadata.get(key) for key in ("codebase_version", "total_episodes",
                                           "total_frames", "fps")
-    }, "fingerprint": fingerprint_dataset(root), "decoded": decoded}
+    }, "preflight": preflight, "fingerprint": fingerprint_dataset(root), "decoded": decoded}
+
+
+def preflight_dataset_root(root: Path) -> dict[str, Any]:
+    """Run the lightweight caption and episode-index guard used before training."""
+    try:
+        from data_pipeline.preflight_lerobot_dataset import DatasetPreflightError, audit
+    except ImportError as exc:
+        raise RegistryError("LeRobot dataset preflight dependencies are unavailable") from exc
+    try:
+        return audit(root)
+    except DatasetPreflightError as exc:
+        raise RegistryError(f"dataset preflight failed: {exc}") from exc
 
 
 def download_dataset(data: Mapping[str, Any]) -> Path:
@@ -917,6 +939,8 @@ def download_dataset(data: Mapping[str, Any]) -> Path:
             raise RegistryError(f"refusing non-empty unregistered destination: {destination}") from exc
         if any(recorded.get(key) != value for key, value in expected.items()):
             raise RegistryError(f"refusing non-empty or mismatched destination: {destination}")
+        if recorded.get("source_kind") == "direct_local_directory":
+            return destination
         if recorded.get("payload_manifest_sha256"):
             return destination
     else:
@@ -1035,6 +1059,7 @@ def audit_dataset_captions(data: Mapping[str, Any]) -> dict[str, Any] | None:
 def dataset_pipeline(data: Mapping[str, Any]) -> dict[str, Any]:
     """Run the idempotent Hub download, audit, preparation, and decode checks."""
     source = download_dataset(data)
+    source_preflight = preflight_dataset_root(source)
     caption = audit_dataset_captions(data)
     prepared = prepare_dataset(data)
     checked = validate_dataset(data, decode=True)
@@ -1042,6 +1067,7 @@ def dataset_pipeline(data: Mapping[str, Any]) -> dict[str, Any]:
         "dataset": data["name"],
         "revision": data["revision"],
         "downloaded": str(source),
+        "source_preflight": source_preflight,
         "caption_audit": caption,
         "prepared": str(prepared),
         "validation": checked,
@@ -1235,6 +1261,103 @@ def register_hf_omx_dataset(
     return destination
 
 
+def register_local_omx_dataset(
+    name: str,
+    source_root: Path,
+    robot_revision: str | None,
+    task: str | None,
+    prepared_root: Path | None = None,
+    training_repo_id: str | None = None,
+    eval_split: float = 0.1,
+    source_revision: str | None = None,
+    handoff: Path | None = None,
+) -> Path:
+    """Register an already copied local F2 OMX Insert LeRobot directory."""
+    defaults = f2_omx_registration_defaults()
+    robot_revision_source = "command_line" if robot_revision else "project_default"
+    task_source = "command_line" if task else "project_default"
+    robot_revision = robot_revision or str(defaults["robot_revision"])
+    task = task or str(defaults["task"])
+    if not NAME_RE.fullmatch(name):
+        raise RegistryError(f"unsafe name {name!r}")
+    if not robot_revision.strip() or not task.strip():
+        raise RegistryError("--robot-revision and --task must be non-empty")
+    if not 0 <= eval_split < 1:
+        raise RegistryError("--eval-split must be at least 0 and less than 1")
+
+    source_root = source_root.expanduser().resolve()
+    if not source_root.is_dir() or not any(source_root.iterdir()):
+        raise RegistryError(f"--source-root must be a non-empty directory: {source_root}")
+    revision = (source_revision or "local").strip()
+    if not revision:
+        raise RegistryError("--source-revision must be non-empty when provided")
+    resolved_handoff = handoff.expanduser().resolve() if handoff else None
+    if resolved_handoff is not None and not resolved_handoff.is_file():
+        raise RegistryError(f"handoff not found: {resolved_handoff}")
+
+    destination = DATASETS / f"{name}.yaml"
+    if destination.exists():
+        raise RegistryError(f"dataset registration already exists: {destination}")
+
+    repo_id = f"local/{name}"
+    prepared_root = prepared_root or ROOT / "artifacts/datasets" / f"{name}_arms16_gop15"
+    metadata = info(source_root)
+    registration: dict[str, Any] = {
+        "source_kind": "direct_local_directory",
+        "contract_profile": portable_path(F2_OMX_PROFILE),
+        "robot_revision_source": robot_revision_source,
+        "task_source": task_source,
+    }
+    if source_revision:
+        registration["source_revision_source"] = "command_line"
+    if resolved_handoff is not None:
+        registration["handoff"] = portable_path(resolved_handoff)
+    data: dict[str, Any] = {
+        "schema_version": 1,
+        "name": name,
+        "repo_id": repo_id,
+        "revision": revision,
+        "registration": registration,
+        "download": {"root": portable_path(source_root)},
+        "prepared": {"root": portable_path(prepared_root), "immutable": True},
+        "preparation": {
+            "script": "${training_root}/scripts/prepare_omx_insert_native.sh",
+            "inject_source_provenance": True,
+            "args": ["--gop-size", "15", "--crf", "18", "--preset", "medium"],
+        },
+        "validation": {
+            "caption_audit": {
+                "enabled": True,
+                "profile": "omx_insert",
+                "language_mode": "full_episode",
+                "expected_subtasks_per_episode": 5,
+                "expected_overall_task": task,
+                "output": portable_path(
+                    ROOT / "artifacts/reports" / f"{name}_caption_audit.json"
+                ),
+            }
+        },
+        "training": {
+            "repo_id": training_repo_id or f"local/{name}_arms16_gop15",
+            "video_backend": "torchcodec",
+            "eval_split": eval_split,
+        },
+        "expected": {
+            key: metadata[key]
+            for key in ("codebase_version", "total_episodes", "total_frames")
+            if key in metadata
+        },
+        "contract": omx_insert_contract(robot_revision, task),
+    }
+    atomic_json(source_root / ".groot_registry_download.json", {
+        "repo_id": repo_id,
+        "revision": revision,
+        "source_kind": "direct_local_directory",
+    })
+    atomic_yaml(destination, data)
+    return destination
+
+
 def hf_registration_report(path: Path) -> dict[str, Any]:
     data = dataset_spec(path)
     registration = data.get("registration", {})
@@ -1245,6 +1368,33 @@ def hf_registration_report(path: Path) -> dict[str, Any]:
             "repo_id": data["repo_id"],
             "requested_revision": registration.get("requested_hub_revision"),
             "pinned_commit": data["revision"],
+        },
+        "robot_revision": {
+            "value": data["contract"]["robot_revision"],
+            "source": registration.get("robot_revision_source", "registration"),
+        },
+        "task": {
+            "value": data["contract"]["language"]["instruction"],
+            "source": registration.get("task_source", "registration"),
+        },
+        "next": [
+            f"{ROOT / 'grootctl'} dataset show {data['name']}",
+            f"{ROOT / 'grootctl'} dataset pipeline {data['name']}",
+        ],
+    }
+
+
+def local_registration_report(path: Path) -> dict[str, Any]:
+    data = dataset_spec(path)
+    registration = data.get("registration", {})
+    return {
+        "registered": str(path),
+        "dataset": data["name"],
+        "source": {
+            "kind": registration.get("source_kind"),
+            "root": data["download"]["root"],
+            "label": data["revision"],
+            "handoff": registration.get("handoff"),
         },
         "robot_revision": {
             "value": data["contract"]["robot_revision"],
@@ -1325,13 +1475,15 @@ def init_config(name: str, dataset_reference: str) -> Path:
     atomic_yaml(destination, {
         "_base": "../base/groot_n17.yaml",
         "name": name,
-        "description": f"Absolute-action GR00T N1.7 baseline for {dataset_reference}.",
-        "hypothesis": "Reviewed defaults provide a stable trainable baseline for this contract.",
-        "tags": ["baseline", "absolute-actions"],
+        "description": "REPLACE ME: describe this run's purpose and deliberate changes.",
+        "hypothesis": "REPLACE ME: state a falsifiable expectation and reason.",
         "dataset_ref": dataset_reference,
         "annotation": {
-            "owner": os.environ.get("USER", "unknown"),
-            "notes": "Add dataset-specific evaluation criteria before checkpoint selection.",
+            "owner": "intern-team",
+            "notes": (
+                "REPLACE ME: add dataset-specific evaluation criteria, caveats, "
+                "and intended comparisons."
+            ),
         },
     })
     return destination
@@ -1476,6 +1628,37 @@ def parser() -> argparse.ArgumentParser:
     dataset_register.add_argument("--prepared-root", type=Path)
     dataset_register.add_argument("--training-repo-id")
     dataset_register.add_argument("--eval-split", type=float, default=0.1)
+    dataset_register_local = dataset.add_parser(
+        "register-local",
+        help="register a LeRobot directory already copied onto this server",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Create a tracked registration for a local LeRobot directory.\n"
+            "Typical use needs only a local name and --source-root:\n\n"
+            "  grootctl dataset register-local my_data --source-root /path/to/dataset"
+        ),
+    )
+    dataset_register_local.add_argument("name")
+    dataset_register_local.add_argument("--source-root", type=Path, required=True)
+    dataset_register_local.add_argument(
+        "--source-revision",
+        help="optional free-form source label or commit (default: local)",
+    )
+    dataset_register_local.add_argument(
+        "--handoff", type=Path,
+        help="optional provenance note; no naming convention is required",
+    )
+    dataset_register_local.add_argument(
+        "--robot-revision",
+        help="producer robot source/config; usually omit to use dataset defaults",
+    )
+    dataset_register_local.add_argument(
+        "--task",
+        help="full-episode instruction; usually omit to use dataset defaults",
+    )
+    dataset_register_local.add_argument("--prepared-root", type=Path)
+    dataset_register_local.add_argument("--training-repo-id")
+    dataset_register_local.add_argument("--eval-split", type=float, default=0.1)
     dataset_init = dataset.add_parser("init")
     dataset_init.add_argument("name")
     dataset_init.add_argument("--repo-id", required=True)
@@ -1492,16 +1675,24 @@ def parser() -> argparse.ArgumentParser:
     dataset_init.add_argument("--embodiment", default="new_embodiment")
     dataset_help = {
         "show": "print the resolved registration",
-        "download": "download the pinned Hub snapshot and hash its payload",
+        "download": "download a Hub source or reuse a registered local directory",
+        "preflight": "detect caption-whitespace and episode-index defects",
         "prepare": "create or verify the immutable training derivative",
         "validate": "check the prepared dataset contract",
-        "pipeline": "download, audit captions, prepare, and decode-validate",
+        "pipeline": "acquire/recheck, audit captions, prepare, and decode-validate",
     }
-    for verb in ("show", "download", "prepare", "validate", "pipeline"):
+    for verb in ("show", "download", "preflight", "prepare", "validate", "pipeline"):
         child = dataset.add_parser(verb, help=dataset_help[verb])
         child.add_argument("reference")
         if verb == "validate":
             child.add_argument("--decode", action="store_true")
+        if verb == "preflight":
+            child.add_argument(
+                "--stage",
+                choices=("source", "prepared"),
+                default="prepared",
+                help="registration path to inspect (default: prepared)",
+            )
     result = subs.add_parser("result").add_subparsers(dest="verb", required=True)
     wandb = result.add_parser("import-wandb")
     wandb.add_argument("reference")
@@ -1579,6 +1770,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 dump(hf_registration_report(path))
                 return 0
+            if args.verb == "register-local":
+                path = register_local_omx_dataset(
+                    name=args.name,
+                    source_root=args.source_root,
+                    robot_revision=args.robot_revision,
+                    task=args.task,
+                    prepared_root=args.prepared_root,
+                    training_repo_id=args.training_repo_id,
+                    eval_split=args.eval_split,
+                    source_revision=args.source_revision,
+                    handoff=args.handoff,
+                )
+                dump(local_registration_report(path))
+                return 0
             if args.verb == "init":
                 print(init_dataset(
                     args.name, args.repo_id, args.revision, args.root,
@@ -1592,6 +1797,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 dump(data)
             elif args.verb == "download":
                 print(download_dataset(data))
+            elif args.verb == "preflight":
+                key = "download" if args.stage == "source" else "prepared"
+                dump(preflight_dataset_root(Path(str(data[key]["root"]))))
             elif args.verb == "prepare":
                 print(prepare_dataset(data))
             elif args.verb == "pipeline":

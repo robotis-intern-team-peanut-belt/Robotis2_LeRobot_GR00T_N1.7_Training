@@ -1,0 +1,8 @@
+_base: ../base/groot_n17.yaml
+name: Task_700009_model_0
+description: 'First training with the 98 episode dataset picking up 5 objects.'
+hypothesis: 'REPLACE ME: state a falsifiable expectation and reason.'
+dataset_ref: Task_700009
+annotation:
+  owner: intern-team
+  notes: 'default settings'

@@ -1,20 +1,14 @@
 # Run override template; shared defaults stay in configs/base/groot_n17.yaml.
 _base: ../base/groot_n17.yaml
 name: TODO_unique_run_name
-description: TODO concise statement of what changes in this run.
-hypothesis: TODO falsifiable expectation and reason.
-tags: [custom]
+description: "REPLACE ME: describe this run's purpose and deliberate changes."
+hypothesis: "REPLACE ME: state a falsifiable expectation and reason."
 dataset_ref: TODO_dataset_name
 # Add only deliberate experiment overrides below.
 # policy:
 #   use_relative_actions: false
 # train:
 #   seed: 42
-tracking:
-  # Keep disabled unless the run owns a reviewed W&B project.
-  backend: none
-  enable: false
-  mode: disabled
 annotation:
-  owner: TODO
-  notes: TODO decision criteria, caveats, and intended comparisons.
+  owner: intern-team
+  notes: "REPLACE ME: add dataset-specific evaluation criteria, caveats, and intended comparisons."

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 import yaml
 
@@ -29,7 +31,8 @@ def write_yaml(path: Path, value: dict) -> None:
 
 def dataset(tmp_path: Path) -> Path:
     root = tmp_path / "dataset"
-    (root / "meta").mkdir(parents=True)
+    (root / "meta/episodes/chunk-000").mkdir(parents=True)
+    (root / "data/chunk-000").mkdir(parents=True)
     features = {
         "observation.state": {"dtype": "float32", "shape": [16], "names": JOINTS},
         "action": {"dtype": "float32", "shape": [16], "names": JOINTS},
@@ -42,6 +45,33 @@ def dataset(tmp_path: Path) -> Path:
         "fps": 15,
         "features": features,
     }))
+    pq.write_table(
+        pa.Table.from_pylist(
+            [
+                {
+                    "episode_index": episode,
+                    "length": 10,
+                    "dataset_from_index": episode * 10,
+                    "dataset_to_index": episode * 10 + 10,
+                }
+                for episode in range(2)
+            ]
+        ),
+        root / "meta/episodes/chunk-000/file-000.parquet",
+    )
+    pq.write_table(
+        pa.Table.from_pylist(
+            [
+                {
+                    "index": index,
+                    "episode_index": index // 10,
+                    "frame_index": index % 10,
+                }
+                for index in range(20)
+            ]
+        ),
+        root / "data/chunk-000/file-000.parquet",
+    )
     return root
 
 
@@ -185,6 +215,19 @@ def test_command_is_dry_and_has_output_guard_path(tmp_path: Path) -> None:
     assert "--output_dir=" + str(tmp_path / "output") in argv
     assert "--wandb.enable=false" in argv
     assert not (tmp_path / "output").exists()
+
+
+def test_groot_base_defaults_to_team_wandb() -> None:
+    base = Path(__file__).resolve().parents[1] / "configs/base/groot_n17.yaml"
+    value = registry.substitute(
+        registry.layered(base),
+        {"name": "test-run"},
+    )
+    argv = registry.command(value)
+    assert "--wandb.enable=true" in argv
+    assert "--wandb.entity=robotis-intern-team-peanut-belt" in argv
+    assert "--wandb.project=gr00t-omx-insert" in argv
+    assert "--wandb.mode=online" in argv
 
 
 def test_optimizer_forwarded_only_without_policy_preset(tmp_path: Path) -> None:
