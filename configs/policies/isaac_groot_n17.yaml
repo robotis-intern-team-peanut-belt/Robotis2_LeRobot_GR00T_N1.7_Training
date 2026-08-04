@@ -1,0 +1,83 @@
+# Native NVIDIA Isaac-GR00T N1.7 defaults for the all-absolute F2 contract.
+schema_version: 1
+backend: isaac_groot
+name: replace-me
+description: Native-camera, all-absolute native Isaac-GR00T N1.7 baseline.
+hypothesis: Override in each run with a falsifiable experiment hypothesis.
+tags: [isaac-groot-n17, language-conditioned]
+
+dataset:
+  shard_size: 1024
+  episode_sampling_rate: 0.1
+  num_shards_per_epoch: 100000
+
+policy:
+  type: groot
+  device: cuda
+  base_model_path: nvidia/GR00T-N1.7-3B
+  embodiment_tag: NEW_EMBODIMENT
+  chunk_size: 40
+  action_representation: absolute
+  tune_llm: false
+  tune_visual: false
+  tune_projector: true
+  tune_diffusion_model: true
+  state_dropout_prob: 0.2
+  color_jitter_params:
+    brightness: 0.3
+    contrast: 0.4
+    saturation: 0.5
+    hue: 0.08
+  use_percentiles: true
+  optimizer_lr: 1.0e-4
+  optimizer_weight_decay: 1.0e-5
+  warmup_ratio: 0.05
+
+train:
+  seed: 42
+  batch_size: 32
+  num_workers: 4
+  gradient_accumulation_steps: 1
+  num_gpus: 1
+  steps: 20000
+  save_checkpoint: true
+  save_freq: 2000
+  save_total_limit: 5
+  save_only_model: false
+  log_freq: 20
+
+optimizer:
+  type: adamw_torch
+  lr: 1.0e-4
+  weight_decay: 1.0e-5
+scheduler:
+  type: cosine_with_warmup
+  warmup_ratio: 0.05
+
+tracking:
+  backend: wandb
+  enable: true
+  entity: robotis-intern-team-peanut-belt
+  project: isaac-groot-omx-insert
+  mode: online
+  disable_artifact: true
+  notes: ${name}; registry-managed native Isaac-GR00T N1.7 run.
+
+resources:
+  min_free_disk_gib: 100
+  timeout_hours: 24
+  expected_gpu: NVIDIA B200 MIG 4g.90gb
+  memory_guard_gib: 80
+artifacts:
+  required_checkpoint_files:
+    - config.json
+    - model.safetensors.index.json
+    - processor/processor_config.json
+    - processor/statistics.json
+    - processor/embodiment_id.json
+    - experiment_cfg/config.yaml
+annotation:
+  owner: intern-team
+  notes: Override with the experiment rationale, decision criteria, and caveats.
+  comparison_role: language_conditioned_native_reference
+  evaluation_required: [offline, shadow, guarded_hardware]

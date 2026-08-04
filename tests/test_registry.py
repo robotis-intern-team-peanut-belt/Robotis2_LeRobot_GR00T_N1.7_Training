@@ -37,14 +37,20 @@ def dataset(tmp_path: Path) -> Path:
         "observation.state": {"dtype": "float32", "shape": [16], "names": JOINTS},
         "action": {"dtype": "float32", "shape": [16], "names": JOINTS},
     }
-    features.update({key: {"dtype": "video", "shape": [3, 480, 640]} for key in CAMERAS})
-    (root / "meta/info.json").write_text(json.dumps({
-        "codebase_version": "v3.0",
-        "total_episodes": 2,
-        "total_frames": 20,
-        "fps": 15,
-        "features": features,
-    }))
+    features.update(
+        {key: {"dtype": "video", "shape": [3, 480, 640]} for key in CAMERAS}
+    )
+    (root / "meta/info.json").write_text(
+        json.dumps(
+            {
+                "codebase_version": "v3.0",
+                "total_episodes": 2,
+                "total_frames": 20,
+                "fps": 15,
+                "features": features,
+            }
+        )
+    )
     pq.write_table(
         pa.Table.from_pylist(
             [
@@ -125,7 +131,11 @@ def dataset_registration(root: Path) -> dict:
         "revision": "a" * 40,
         "download": {"root": str(root)},
         "prepared": {"root": str(root), "immutable": True},
-        "training": {"repo_id": "local/test", "video_backend": "torchcodec", "eval_split": 0.1},
+        "training": {
+            "repo_id": "local/test",
+            "video_backend": "torchcodec",
+            "eval_split": 0.1,
+        },
         "contract": contract(),
     }
 
@@ -141,15 +151,24 @@ def test_recursive_base_and_substitution(tmp_path: Path) -> None:
     base = tmp_path / "base.yaml"
     child = tmp_path / "child.yaml"
     write_yaml(base, config(root, "base"))
-    write_yaml(child, {"_base": "base.yaml", "name": "child", "policy": {"max_steps": 30},
-                       "train": {"steps": 30}})
+    write_yaml(
+        child,
+        {
+            "_base": "base.yaml",
+            "name": "child",
+            "policy": {"max_steps": 30},
+            "train": {"steps": 30},
+        },
+    )
     item = registry.experiment(child, ["train.batch_size=2"])
     assert item.name == "child"
     assert item.data["policy"]["max_steps"] == 30
     assert item.data["train"]["batch_size"] == 2
 
 
-def test_dataset_reference_injects_contract(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dataset_reference_injects_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     root = dataset(tmp_path)
     registrations = tmp_path / "registrations"
     write_yaml(registrations / "test_dataset.yaml", dataset_registration(root))
@@ -211,7 +230,11 @@ def test_contract_camera_order_is_checked(tmp_path: Path) -> None:
 def test_command_is_dry_and_has_output_guard_path(tmp_path: Path) -> None:
     value = config(dataset(tmp_path))
     argv = registry.command(value, tmp_path / "output")
-    assert argv[0] == "lerobot-train"
+    assert argv[:3] == [
+        str(registry.ROOT / "scripts/run_backend.sh"),
+        "lerobot",
+        "lerobot-train",
+    ]
     assert "--output_dir=" + str(tmp_path / "output") in argv
     assert "--wandb.enable=false" in argv
     assert not (tmp_path / "output").exists()
@@ -248,3 +271,24 @@ def test_duplicate_output_rejected_before_launch(tmp_path: Path) -> None:
     (run_dir / "output").mkdir(parents=True)
     with pytest.raises(registry.RegistryError, match="existing output"):
         registry.execute(item, dry_run=True, run_dir=run_dir)
+
+
+def test_verified_legacy_manifest_recovers_missing_download_marker(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "legacy"
+    source.mkdir()
+    payload = source / "data.bin"
+    payload.write_bytes(b"payload")
+    manifest = tmp_path / "legacy_SHA256SUMS.txt"
+    manifest.write_text(f"{registry.sha256_file(payload)}  ./data.bin\n")
+    value = {
+        "repo_id": "local/legacy",
+        "revision": "a" * 40,
+        "source_manifest_sha256": registry.sha256_file(manifest),
+        "download": {"root": str(source), "manifest": str(manifest)},
+    }
+    assert registry.download_dataset(value) == source
+    marker = json.loads((source / ".groot_registry_download.json").read_text())
+    assert marker["source_kind"] == "verified_legacy_manifest"
+    assert marker["payload_manifest_sha256"] == registry.sha256_file(manifest)

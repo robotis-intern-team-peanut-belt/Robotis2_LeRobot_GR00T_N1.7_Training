@@ -26,6 +26,7 @@ htmlcov/
 
 # Local Python environments and environment files.
 .venv/
+.venv-isaac-converter/
 venv/
 .env
 .env.*

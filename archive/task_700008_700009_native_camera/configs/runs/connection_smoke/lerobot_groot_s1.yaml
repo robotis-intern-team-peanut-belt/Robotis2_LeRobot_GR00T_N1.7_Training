@@ -1,0 +1,27 @@
+_base: ../../policies/lerobot_groot_n17.yaml
+name: connection_smoke_lerobot_groot_s1
+description: One-step wiring check on the obsolete four-episode sample.
+hypothesis: Canonical v3 data reaches one finite all-absolute LeRobot GR00T update.
+tags: [connection-smoke, lerobot-groot, absolute-actions]
+dataset_ref: omx_insert_f2_native_4ep_sample
+
+policy:
+  max_steps: 1
+train:
+  batch_size: 1
+  num_workers: 1
+  steps: 1
+  save_checkpoint: false
+  eval_steps: 0
+  log_freq: 1
+tracking:
+  backend: none
+  enable: false
+  mode: disabled
+resources:
+  min_free_disk_gib: 50
+  timeout_hours: 1
+annotation:
+  owner: intern-team
+  notes: Connection evidence only; never use this output for inference or deployment.
+  evaluation_required: [finite_loss]

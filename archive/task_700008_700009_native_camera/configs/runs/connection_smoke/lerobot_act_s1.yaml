@@ -1,0 +1,25 @@
+_base: ../../policies/lerobot_act.yaml
+name: connection_smoke_lerobot_act_s1
+description: One-step ACT visual/proprioceptive wiring check on the obsolete sample.
+hypothesis: Canonical v3 images and proprioception reach one finite ACT update without language.
+tags: [connection-smoke, lerobot-act, absolute-actions, no-language]
+dataset_ref: omx_insert_f2_native_4ep_sample
+
+train:
+  batch_size: 1
+  num_workers: 1
+  steps: 1
+  save_checkpoint: false
+  eval_steps: 0
+  log_freq: 1
+tracking:
+  backend: none
+  enable: false
+  mode: disabled
+resources:
+  min_free_disk_gib: 50
+  timeout_hours: 1
+annotation:
+  owner: intern-team
+  notes: Connection evidence only; never use this output for inference or deployment.
+  evaluation_required: [finite_loss]

@@ -1,0 +1,12 @@
+# Human-facing defaults for datasets from the current F2 OMX Insert lineage.
+schema_version: 1
+name: f2_omx_insert
+
+# Robot-side source/config that produced the current native-camera dataset.
+robot_revision: f2_ai_worker_f8a970bb98becefe4e69fd52e3af5b7ae81b273f
+
+# Full-episode instruction supplied to GR00T for every episode.
+task: Insert 5 OMX kit components (electronic, servo, wrapped cable, light grey OMX-F3, light grey OMX-Base) into their cutout holes in ivory foam bed.
+
+# Update this profile only after a new robot handoff changes the shared contract.
+evidence: ${workspace}/handoffs/20260730T053330Z_omx_insert_f2_lerobot_v30_robot_to_robotis2.md

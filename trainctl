@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TRAINING_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+
+export TRAINCTL_PROGRAM="trainctl"
+export TRAINCTL_EXECUTABLE="${TRAINING_ROOT}/trainctl"
+exec python3 "${TRAINING_ROOT}/registry.py" "$@"

@@ -1,0 +1,31 @@
+_base: ../../policies/isaac_groot_n17.yaml
+name: connection_smoke_isaac_groot_s1
+description: One-step native Isaac GR00T wiring check on the generated v2.1 derivative.
+hypothesis: Native v2.1 data reaches one finite all-absolute Isaac GR00T update.
+tags: [connection-smoke, isaac-groot, absolute-actions]
+dataset_ref: omx_insert_f2_native_4ep_sample
+
+dataset:
+  shard_size: 64
+  episode_sampling_rate: 1.0
+  num_shards_per_epoch: 1
+train:
+  batch_size: 1
+  num_workers: 0
+  steps: 1
+  save_freq: 100
+  save_total_limit: 1
+  save_only_model: true
+  disable_checkpointing: true
+  log_freq: 1
+tracking:
+  backend: none
+  enable: false
+  mode: disabled
+resources:
+  min_free_disk_gib: 50
+  timeout_hours: 1
+annotation:
+  owner: intern-team
+  notes: Connection evidence only; final checkpoint saving is deliberately disabled.
+  evaluation_required: [finite_loss]

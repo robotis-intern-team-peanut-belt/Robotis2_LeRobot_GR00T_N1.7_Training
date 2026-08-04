@@ -44,6 +44,13 @@ expected:
   total_episodes: 4
   total_frames: 7160
 
+adapters:
+  isaac_groot:
+    root: ${training_root}/artifacts/datasets/omx_insert_f2_native_4ep_sample_isaac_v21
+    modality_config_path: ${training_root}/configs/modalities/f2_arms16_absolute_h40.py
+    modality_json_path: ${training_root}/configs/modalities/f2_arms16_modality.json
+    embodiment_tag: NEW_EMBODIMENT
+
 contract:
   robot_revision: f2_ai_worker_f8a970bb98becefe4e69fd52e3af5b7ae81b273f
   embodiment: new_embodiment

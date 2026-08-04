@@ -1,0 +1,22 @@
+{
+  "state": {
+    "left_arm": {"start": 0, "end": 7},
+    "left_gripper": {"start": 7, "end": 8},
+    "right_arm": {"start": 8, "end": 15},
+    "right_gripper": {"start": 15, "end": 16}
+  },
+  "action": {
+    "left_arm": {"start": 0, "end": 7},
+    "left_gripper": {"start": 7, "end": 8},
+    "right_arm": {"start": 8, "end": 15},
+    "right_gripper": {"start": 15, "end": 16}
+  },
+  "video": {
+    "head": {"original_key": "observation.images.rgb.cam_head"},
+    "left_wrist": {"original_key": "observation.images.rgb.cam_left_wrist"},
+    "right_wrist": {"original_key": "observation.images.rgb.cam_right_wrist"}
+  },
+  "annotation": {
+    "human.task_description": {"original_key": "annotation.human.task_description"}
+  }
+}

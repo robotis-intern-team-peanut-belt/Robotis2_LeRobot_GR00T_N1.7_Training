@@ -26,31 +26,67 @@ from typing import Any, Mapping, Sequence
 
 import yaml
 
+import backends
+import checkpoints
+
 ROOT = Path(__file__).resolve().parent
 WORKSPACE = ROOT.parent
 CONFIGS = ROOT / "configs" / "runs"
 QUEUES = ROOT / "configs" / "queues"
 DATASETS = ROOT / "configs" / "datasets"
-F2_OMX_PROFILE = ROOT / "configs" / "base" / "f2_omx_insert_contract.yaml"
+F2_OMX_PROFILE = ROOT / "configs" / "contracts" / "f2_omx_insert.yaml"
 RUNS = ROOT / "runs"
-LEROBOT = Path(os.environ.get("LEROBOT_ROOT", WORKSPACE / "lerobot")).expanduser().resolve()
+CLI = Path(os.environ.get("TRAINCTL_EXECUTABLE", ROOT / "grootctl")).resolve()
+LEROBOT = (
+    Path(os.environ.get("LEROBOT_ROOT", WORKSPACE / "lerobot")).expanduser().resolve()
+)
+ISAAC_GROOT = (
+    Path(os.environ.get("ISAAC_GROOT_ROOT", WORKSPACE / "Isaac-GR00T"))
+    .expanduser()
+    .resolve()
+)
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 VAR_RE = re.compile(r"\$\{([a-z_]+)\}")
-OOM_RE = re.compile(r"CUDA out of memory|OutOfMemoryError|CUBLAS_STATUS_ALLOC_FAILED", re.I)
+OOM_RE = re.compile(
+    r"CUDA out of memory|OutOfMemoryError|CUBLAS_STATUS_ALLOC_FAILED", re.I
+)
 TRAIN_METRIC_RE = re.compile(
     r"\bstep:(?P<step>\d+).*?\bloss:(?P<loss>[-+0-9.eE]+).*?"
     r"\bgrdn:(?P<gradient>[-+0-9.eE]+).*?\bsmp/s:(?P<rate>[-+0-9.eE]+).*?"
     r"\bmem_gb:(?P<memory>[-+0-9.eE]+)"
 )
 TOP_KEYS = {
-    "schema_version", "backend", "name", "description", "hypothesis", "tags",
-    "dataset_ref", "dataset", "contract", "policy", "train", "optimizer",
-    "scheduler", "tracking", "resources", "artifacts", "annotation",
+    "schema_version",
+    "backend",
+    "name",
+    "description",
+    "hypothesis",
+    "tags",
+    "dataset_ref",
+    "dataset",
+    "contract",
+    "policy",
+    "train",
+    "optimizer",
+    "scheduler",
+    "tracking",
+    "resources",
+    "artifacts",
+    "annotation",
+    "adapters",
 }
 DATASET_FLAGS = {
-    "repo_id", "root", "episodes", "image_transforms", "revision",
-    "use_imagenet_stats", "video_backend", "return_uint8", "depth_output_unit",
-    "streaming", "eval_split",
+    "repo_id",
+    "root",
+    "episodes",
+    "image_transforms",
+    "revision",
+    "use_imagenet_stats",
+    "video_backend",
+    "return_uint8",
+    "depth_output_unit",
+    "streaming",
+    "eval_split",
 }
 OMX_INSERT_CAMERAS = (
     "observation.images.rgb.cam_head",
@@ -80,7 +116,12 @@ class Experiment:
 
 
 def now() -> str:
-    return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return (
+        dt.datetime.now(dt.timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
 
 def read_yaml(path: Path) -> dict[str, Any]:
@@ -129,7 +170,10 @@ def payload_manifest(root: Path) -> tuple[str, str, int, int]:
     count = size = 0
     for path in sorted(item for item in root.rglob("*") if item.is_file()):
         relative = path.relative_to(root)
-        if relative.parts[0] == ".cache" or relative.name == ".groot_registry_download.json":
+        if (
+            relative.parts[0] == ".cache"
+            or relative.name == ".groot_registry_download.json"
+        ):
             continue
         length = path.stat().st_size
         lines.append(f"{sha256_file(path)}  {relative.as_posix()}")
@@ -152,7 +196,9 @@ def merge(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict[str, Any
 def layered(path: Path, seen: tuple[Path, ...] = ()) -> dict[str, Any]:
     path = path.resolve()
     if path in seen:
-        raise RegistryError("circular _base chain: " + " -> ".join(map(str, (*seen, path))))
+        raise RegistryError(
+            "circular _base chain: " + " -> ".join(map(str, (*seen, path)))
+        )
     raw = read_yaml(path)
     base = raw.pop("_base", None)
     if base is None:
@@ -189,11 +235,13 @@ def apply_sets(data: dict[str, Any], values: Sequence[str]) -> dict[str, Any]:
 
 def substitute(value: Any, variables: Mapping[str, str]) -> Any:
     if isinstance(value, str):
+
         def replace(match: re.Match[str]) -> str:
             key = match.group(1)
             if key not in variables:
                 raise RegistryError(f"unknown variable ${{{key}}}")
             return variables[key]
+
         return VAR_RE.sub(replace, value)
     if isinstance(value, list):
         return [substitute(item, variables) for item in value]
@@ -204,11 +252,17 @@ def substitute(value: Any, variables: Mapping[str, str]) -> Any:
 
 def find(reference: str | Path, root: Path, relative: Path | None = None) -> Path:
     ref = Path(reference)
-    candidates = [ref] if ref.is_absolute() else [
-        *(([relative / ref] if relative else [])),
-        Path.cwd() / ref, Path(__file__).resolve().parent / ref, root / ref,
-        *(([root / f"{ref}.yaml", root / f"{ref}.yml"] if not ref.suffix else [])),
-    ]
+    candidates = (
+        [ref]
+        if ref.is_absolute()
+        else [
+            *(([relative / ref] if relative else [])),
+            Path.cwd() / ref,
+            Path(__file__).resolve().parent / ref,
+            root / ref,
+            *(([root / f"{ref}.yaml", root / f"{ref}.yml"] if not ref.suffix else [])),
+        ]
+    )
     for candidate in candidates:
         if candidate.is_file():
             return candidate.resolve()
@@ -220,7 +274,9 @@ def info(root: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise RegistryError(f"invalid or missing dataset metadata {path}: {exc}") from exc
+        raise RegistryError(
+            f"invalid or missing dataset metadata {path}: {exc}"
+        ) from exc
     return value
 
 
@@ -241,7 +297,9 @@ def resolved_contract(data: Mapping[str, Any]) -> dict[str, Any]:
         if isinstance(value, dict) and value.get("dtype") in {"video", "image"}
     ]
     if not cameras or not state.get("names") or not action.get("names"):
-        raise RegistryError(f"{root}: metadata cannot derive camera/state/action contract")
+        raise RegistryError(
+            f"{root}: metadata cannot derive camera/state/action contract"
+        )
     derived = {
         "fps": metadata.get("fps"),
         "cameras": cameras,
@@ -251,7 +309,9 @@ def resolved_contract(data: Mapping[str, Any]) -> dict[str, Any]:
     return merge(derived, contract)
 
 
-def validate_contract(config: Mapping[str, Any], metadata: Mapping[str, Any], source: Path) -> None:
+def validate_contract(
+    config: Mapping[str, Any], metadata: Mapping[str, Any], source: Path
+) -> None:
     contract = config["contract"]
     features = metadata.get("features", {})
     for section, key in (("state", "observation.state"), ("action", "action")):
@@ -268,7 +328,8 @@ def validate_contract(config: Mapping[str, Any], metadata: Mapping[str, Any], so
         if features.get(key, {}).get("shape") != camera.get("shape"):
             raise RegistryError(f"{source}: camera contract mismatch for {key}")
     observed_keys = [
-        key for key, value in features.items()
+        key
+        for key, value in features.items()
         if isinstance(value, dict) and value.get("dtype") in {"video", "image"}
     ]
     if observed_keys != expected_keys:
@@ -277,12 +338,20 @@ def validate_contract(config: Mapping[str, Any], metadata: Mapping[str, Any], so
         raise RegistryError(f"{source}: FPS mismatch")
 
 
-def validate(data: Mapping[str, Any], source: Path, require_dataset: bool, launch: bool) -> None:
+def validate(
+    data: Mapping[str, Any], source: Path, require_dataset: bool, launch: bool
+) -> None:
     unknown = set(data) - TOP_KEYS
     if unknown:
-        raise RegistryError(f"{source}: unknown top-level keys: {', '.join(sorted(unknown))}")
-    if data.get("schema_version") != 1 or data.get("backend") != "lerobot":
-        raise RegistryError(f"{source}: requires schema_version: 1 and backend: lerobot")
+        raise RegistryError(
+            f"{source}: unknown top-level keys: {', '.join(sorted(unknown))}"
+        )
+    if data.get("schema_version") != 1:
+        raise RegistryError(f"{source}: requires schema_version: 1")
+    try:
+        backend = backends.canonical_backend(str(data.get("backend")))
+    except ValueError as exc:
+        raise RegistryError(f"{source}: {exc}") from exc
     if not NAME_RE.fullmatch(str(data.get("name", ""))):
         raise RegistryError(f"{source}: unsafe name {data.get('name')!r}")
     tags = data.get("tags")
@@ -290,27 +359,73 @@ def validate(data: Mapping[str, Any], source: Path, require_dataset: bool, launc
         raise RegistryError(
             f"{source}: tags must be a list of strings; quote date-like YAML tags"
         )
-    for key in ("dataset", "contract", "policy", "train", "optimizer", "scheduler",
-                "tracking", "resources", "artifacts", "annotation"):
+    for key in (
+        "dataset",
+        "contract",
+        "policy",
+        "train",
+        "optimizer",
+        "scheduler",
+        "tracking",
+        "resources",
+        "artifacts",
+        "annotation",
+    ):
         if not isinstance(data.get(key), dict):
             raise RegistryError(f"{source}: {key} must be a mapping")
     dataset, policy, train = data["dataset"], data["policy"], data["train"]
     if not dataset.get("repo_id") or not dataset.get("root"):
         raise RegistryError(f"{source}: dataset.repo_id and dataset.root are required")
-    if policy.get("type") != "groot" or policy.get("device") not in {"cuda", "cpu", "mps"}:
-        raise RegistryError(f"{source}: invalid GR00T policy type/device")
-    if policy.get("max_steps") != train.get("steps"):
+    expected_type = "act" if backend == "lerobot_act" else "groot"
+    if policy.get("type") != expected_type or policy.get("device") not in {
+        "cuda",
+        "cpu",
+        "mps",
+    }:
+        raise RegistryError(f"{source}: invalid {backend} policy type/device")
+    if backend == "lerobot_groot" and policy.get("max_steps") != train.get("steps"):
         raise RegistryError(f"{source}: policy.max_steps must equal train.steps")
-    if not math.isclose(float(data["optimizer"]["lr"]), float(policy["optimizer_lr"])):
+    if "optimizer_lr" in policy and not math.isclose(
+        float(data["optimizer"]["lr"]), float(policy["optimizer_lr"])
+    ):
         raise RegistryError(f"{source}: optimizer.lr must equal policy.optimizer_lr")
-    for key in ("batch_size", "num_workers", "steps"):
-        if not isinstance(train.get(key), int) or isinstance(train.get(key), bool) or train[key] <= 0:
+    for key in ("batch_size", "steps"):
+        if (
+            not isinstance(train.get(key), int)
+            or isinstance(train.get(key), bool)
+            or train[key] <= 0
+        ):
             raise RegistryError(f"{source}: train.{key} must be a positive integer")
-    relative, excluded = policy.get("use_relative_actions"), policy.get("relative_exclude_joints")
+    workers = train.get("num_workers")
+    if not isinstance(workers, int) or isinstance(workers, bool) or workers < 0:
+        raise RegistryError(
+            f"{source}: train.num_workers must be a non-negative integer"
+        )
+    if backend == "isaac_groot":
+        if policy.get("action_representation") != "absolute":
+            raise RegistryError(
+                f"{source}: native Isaac policy must declare absolute actions"
+            )
+        if not dataset.get("modality_config_path"):
+            raise RegistryError(
+                f"{source}: native Isaac dataset needs modality_config_path"
+            )
+        if policy.get("chunk_size") != 40:
+            raise RegistryError(
+                f"{source}: native Isaac modality contract requires horizon 40"
+            )
+        if train.get("seed", 42) != 42:
+            raise RegistryError(
+                f"{source}: unmodified native Isaac launcher currently requires seed 42"
+            )
+    relative = policy.get("use_relative_actions")
+    excluded = policy.get("relative_exclude_joints")
     if relative and (not isinstance(excluded, list) or not excluded):
         raise RegistryError(f"{source}: relative actions require exclusions")
     if not relative and excluded:
-        raise RegistryError(f"{source}: exclusions set while relative actions are disabled")
+        raise RegistryError(
+            f"{source}: exclusions set while relative actions are disabled"
+        )
     names = data["contract"].get("action", {}).get("names", [])
     for term in excluded or []:
         if not any(str(term).lower() in name.lower() for name in names):
@@ -330,13 +445,38 @@ def validate(data: Mapping[str, Any], source: Path, require_dataset: bool, launc
     if require_dataset:
         dataset_root = Path(str(dataset["root"]))
         validate_contract(data, info(dataset_root), source)
-        preflight_dataset_root(dataset_root)
+        if backend == "isaac_groot":
+            receipt = dataset_root / "ISAAC_DERIVATION_RECEIPT.json"
+            if not receipt.is_file():
+                raise RegistryError(
+                    f"{source}: native Isaac derivative is not prepared; run "
+                    f"trainctl dataset prepare-isaac {dataset.get('registry_ref')}"
+                )
+        else:
+            preflight_dataset_root(dataset_root)
 
 
-def dataset_defaults(reference: str) -> dict[str, Any]:
-    """Resolve one registered dataset into trainer fields plus its exact contract."""
+def dataset_defaults(reference: str, backend: str | None = None) -> dict[str, Any]:
+    """Resolve one registered dataset into backend-specific fields plus its contract."""
     spec = dataset_spec(reference)
     training = spec.get("training", {})
+    selected = backends.canonical_backend(backend or "lerobot_groot")
+    if selected == "isaac_groot":
+        from data_pipeline.isaac_groot import adapter_spec
+
+        adapter = adapter_spec(spec)
+        return {
+            "dataset": {
+                "registry_ref": spec["name"],
+                "source_revision": spec["revision"],
+                "repo_id": f"local/{spec['name']}_isaac_v21",
+                "root": adapter["root"],
+                "modality_config_path": adapter["modality_config_path"],
+                "embodiment_tag": adapter["embodiment_tag"],
+                "eval_split": 0.0,
+            },
+            "contract": resolved_contract(spec),
+        }
     return {
         "dataset": {
             "registry_ref": spec["name"],
@@ -351,72 +491,61 @@ def dataset_defaults(reference: str) -> dict[str, Any]:
     }
 
 
-def experiment(reference: str | Path, sets: Sequence[str] = (), relative: Path | None = None,
-               require_dataset: bool = True, launch: bool = False) -> Experiment:
+def experiment(
+    reference: str | Path,
+    sets: Sequence[str] = (),
+    relative: Path | None = None,
+    require_dataset: bool = True,
+    launch: bool = False,
+) -> Experiment:
     path = find(reference, CONFIGS, relative)
     data = apply_sets(layered(path), sets)
     dataset_reference = data.pop("dataset_ref", None)
     if dataset_reference is not None:
         if not isinstance(dataset_reference, str) or not dataset_reference:
             raise RegistryError(f"{path}: dataset_ref must be a non-empty string")
-        data = merge(dataset_defaults(dataset_reference), data)
+        data = merge(dataset_defaults(dataset_reference, data.get("backend")), data)
     name = data.get("name")
     if not isinstance(name, str) or not name:
         raise RegistryError(f"{path}: name is required")
-    data = substitute(data, {
-        "workspace": str(WORKSPACE), "training_root": str(ROOT), "name": name,
-    })
+    data = substitute(
+        data,
+        {
+            "workspace": str(WORKSPACE),
+            "training_root": str(ROOT),
+            "name": name,
+        },
+    )
     validate(data, path, require_dataset, launch)
     return Experiment(path, data)
 
 
 def render(value: Any) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (dict, list, tuple)):
-        return json.dumps(value, separators=(",", ":"))
-    return str(value)
+    return backends.render(value)
 
 
-def flags(prefix: str, values: Mapping[str, Any], skip: set[str] | None = None) -> list[str]:
-    result = []
-    for key, value in values.items():
-        if value is None or value == [] or key in (skip or set()):
-            continue
-        dotted = f"{prefix}.{key}" if prefix else key
-        # Draccus accepts ImageTransformsConfig.tfs as one structured value, but
-        # rejects leaf overrides below tfs.
-        if dotted == "dataset.image_transforms.tfs" and isinstance(value, dict):
-            result.append(f"--{dotted}={render(value)}")
-        elif isinstance(value, dict):
-            result.extend(flags(dotted, value))
-        else:
-            result.append(f"--{dotted}={render(value)}")
-    return result
+def flags(
+    prefix: str, values: Mapping[str, Any], skip: set[str] | None = None
+) -> list[str]:
+    return backends.dotted_flags(prefix, values, skip)
 
 
 def output_dir(data: Mapping[str, Any], run_dir: Path | None = None) -> Path:
     explicit = data["artifacts"].get("output_dir")
-    return Path(str(explicit)) if explicit else (run_dir or RUNS / str(data["name"])) / "output"
+    return (
+        Path(str(explicit))
+        if explicit
+        else (run_dir or RUNS / str(data["name"])) / "output"
+    )
 
 
-def command(data: Mapping[str, Any], out: Path | None = None,
-            resume_config: Path | None = None) -> list[str]:
-    if resume_config:
-        return ["lerobot-train", f"--config_path={resume_config}", "--resume=true"]
-    dataset = {key: value for key, value in data["dataset"].items() if key in DATASET_FLAGS}
-    train = {key: value for key, value in data["train"].items() if key != "timeout_seconds"}
-    result = ["lerobot-train", *flags("dataset", dataset), *flags("policy", data["policy"]),
-              *flags("", train)]
-    if not train.get("use_policy_training_preset", True):
-        result += flags("optimizer", data["optimizer"]) + flags("scheduler", data["scheduler"])
-    result += [f"--output_dir={out or output_dir(data)}", f"--job_name={data['name']}"]
-    if data["tracking"]["backend"] == "wandb":
-        result += flags("wandb", data["tracking"], {"backend", "url"})
-    else:
-        result.append("--wandb.enable=false")
-    return result
-
+def command(
+    data: Mapping[str, Any], out: Path | None = None, resume_config: Path | None = None
+) -> list[str]:
+    try:
+        return backends.build_command(data, out or output_dir(data), resume_config)
+    except ValueError as exc:
+        raise RegistryError(str(exc)) from exc
 
 
 def fingerprint_dataset(root: Path) -> dict[str, Any]:
@@ -429,47 +558,89 @@ def fingerprint_dataset(root: Path) -> dict[str, Any]:
         if relative.startswith("meta/"):
             metadata.update(relative.encode() + b"\0" + path.read_bytes())
     return {
-        "root": str(root), "metadata_sha256": metadata.hexdigest(),
-        "inventory_sha256": inventory.hexdigest(), "file_count": count, "bytes": size,
+        "root": str(root),
+        "metadata_sha256": metadata.hexdigest(),
+        "inventory_sha256": inventory.hexdigest(),
+        "file_count": count,
+        "bytes": size,
     }
 
 
 def git_identity(path: Path) -> dict[str, Any]:
     def git(*args: str) -> str | None:
-        done = subprocess.run(["git", "-C", str(path), *args], text=True,
-                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        done = subprocess.run(
+            ["git", "-C", str(path), *args],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
         return done.stdout.strip() if done.returncode == 0 else None
+
     sha = git("rev-parse", "HEAD")
-    return {"root": str(path), "sha": sha, "dirty": bool(git("status", "--porcelain")) if sha else None}
+    return {
+        "root": str(path),
+        "sha": sha,
+        "dirty": bool(git("status", "--porcelain")) if sha else None,
+    }
 
 
 def manifest(item: Experiment, argv: Sequence[str], run_dir: Path) -> dict[str, Any]:
     blob = json.dumps(item.data, sort_keys=True, separators=(",", ":")).encode()
+    backend = backends.canonical_backend(item.data.get("backend"))
+    code_root = ISAAC_GROOT if backend == "isaac_groot" else LEROBOT
     return {
-        "schema_version": 1, "created_utc": now(), "run_name": item.name,
-        "source_config": str(item.source), "config_sha256": hashlib.sha256(blob).hexdigest(),
-        "command_sha256": hashlib.sha256((shlex.join(argv) + "\n").encode()).hexdigest(),
+        "schema_version": 1,
+        "created_utc": now(),
+        "run_name": item.name,
+        "backend": backend,
+        "source_config": str(item.source),
+        "config_sha256": hashlib.sha256(blob).hexdigest(),
+        "command_sha256": hashlib.sha256(
+            (shlex.join(argv) + "\n").encode()
+        ).hexdigest(),
         "dataset": fingerprint_dataset(Path(str(item.data["dataset"]["root"]))),
-        "code": {"lerobot": git_identity(LEROBOT),
-                 "registry_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()},
-        "paths": {"run_dir": str(run_dir), "output_dir": str(output_dir(item.data, run_dir))},
-        "safety": {"robot_hardware_invoked": False, "allowed_executable": "lerobot-train"},
+        "code": {
+            backend: git_identity(code_root),
+            "training": git_identity(ROOT),
+            "registry_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        },
+        "paths": {
+            "run_dir": str(run_dir),
+            "output_dir": str(output_dir(item.data, run_dir)),
+        },
+        "safety": {
+            "robot_hardware_invoked": False,
+            "allowed_backend": backend,
+        },
     }
 
 
 def blank_result(name: str) -> dict[str, Any]:
     return {
-        "schema_version": 1, "run_name": name,
+        "schema_version": 1,
+        "run_name": name,
         "status": {"state": "not_started", "exit_code": None, "failure_category": None},
         "timing": {"started_utc": None, "finished_utc": None, "runtime_seconds": None},
         "wandb": {"entity": None, "project": None, "run_id": None, "url": None},
-        "metrics": {"best_eval_loss": None, "best_eval_step": None, "final_eval_loss": None,
-                    "final_train_loss": None, "samples_per_second": None,
-                    "cuda_memory_gib": None},
+        "metrics": {
+            "best_eval_loss": None,
+            "best_eval_step": None,
+            "final_eval_loss": None,
+            "final_train_loss": None,
+            "samples_per_second": None,
+            "cuda_memory_gib": None,
+        },
         "best_checkpoint": {"step": None, "path": None, "selection_reason": None},
-        "artifacts": {"resolved_config": None, "manifest": None, "train_log": None,
-                      "pretrained_model": None},
-        "summary": None, "interpretation": None, "anomalies": [], "next_action": None,
+        "artifacts": {
+            "resolved_config": None,
+            "manifest": None,
+            "train_log": None,
+            "pretrained_model": None,
+        },
+        "summary": None,
+        "interpretation": None,
+        "anomalies": [],
+        "next_action": None,
         "evaluation": {
             "offline": {"status": "not_evaluated", "notes": None},
             "shadow": {"status": "not_evaluated", "notes": None},
@@ -478,10 +649,18 @@ def blank_result(name: str) -> dict[str, Any]:
     }
 
 
-def stream(argv: Sequence[str], log: Path, timeout: float, append: bool) -> tuple[int, bool]:
+def stream(
+    argv: Sequence[str], log: Path, timeout: float, append: bool
+) -> tuple[int, bool]:
     with log.open("a" if append else "w", encoding="utf-8") as handle:
-        process = subprocess.Popen(list(argv), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                   text=True, bufsize=1, start_new_session=True)
+        process = subprocess.Popen(
+            list(argv),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            start_new_session=True,
+        )
         assert process.stdout
         selector = selectors.DefaultSelector()
         selector.register(process.stdout, selectors.EVENT_READ)
@@ -511,51 +690,104 @@ def stream(argv: Sequence[str], log: Path, timeout: float, append: bool) -> tupl
     return (code if code >= 0 else 128 - code), timed_out
 
 
-def final_training_metrics(text: str) -> dict[str, float | int] | None:
+def final_training_metrics(text: str) -> dict[str, float | int | None] | None:
     matches = list(TRAIN_METRIC_RE.finditer(text))
-    if not matches:
+    if matches:
+        values = matches[-1].groupdict()
+        return {
+            "step": int(values["step"]),
+            "loss": float(values["loss"]),
+            "gradient_norm": float(values["gradient"]),
+            "samples_per_second": float(values["rate"]),
+            "cuda_memory_gib": float(values["memory"]),
+        }
+    native_losses = re.findall(r"'train_loss':\s*([-+0-9.eE]+)", text)
+    if not native_losses:
         return None
-    values = matches[-1].groupdict()
+    native_rates = re.findall(r"'train_samples_per_second':\s*([-+0-9.eE]+)", text)
     return {
-        "step": int(values["step"]),
-        "loss": float(values["loss"]),
-        "gradient_norm": float(values["gradient"]),
-        "samples_per_second": float(values["rate"]),
-        "cuda_memory_gib": float(values["memory"]),
+        "step": None,
+        "loss": float(native_losses[-1]),
+        "gradient_norm": None,
+        "samples_per_second": float(native_rates[-1]) if native_rates else None,
+        "cuda_memory_gib": None,
     }
 
 
-def validate_gpu_resources(data: Mapping[str, Any], torch_module: Any | None = None) -> dict[str, Any] | None:
-    """Require enough visible CUDA memory before a non-dry training launch."""
+def validate_gpu_resources(
+    data: Mapping[str, Any], torch_module: Any | None = None
+) -> dict[str, Any] | None:
+    """Require enough visible CUDA memory in the selected backend environment."""
     required = data["resources"].get("memory_guard_gib")
     if required is None:
         return None
     if torch_module is None:
+        probe = (
+            "import json, torch; "
+            "assert torch.cuda.is_available(), 'CUDA is unavailable'; "
+            "d=torch.cuda.current_device(); p=torch.cuda.get_device_properties(d); "
+            "print(json.dumps({'device': torch.cuda.get_device_name(d), "
+            "'total_memory_gib': round(p.total_memory/1024**3, 3)}))"
+        )
+        backend = backends.canonical_backend(data.get("backend"))
+        selected = "isaac_groot" if backend == "isaac_groot" else "lerobot"
+        done = subprocess.run(
+            [str(ROOT / "scripts/run_backend.sh"), selected, "python", "-c", probe],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if done.returncode != 0:
+            detail = (done.stderr or done.stdout).strip()
+            raise RegistryError(f"GPU memory guard failed in {backend}: {detail}")
         try:
-            import torch as torch_module
-        except ImportError as exc:
-            raise RegistryError("GPU memory guard requires the LeRobot environment") from exc
-    if not torch_module.cuda.is_available():
-        raise RegistryError("CUDA is unavailable; refusing non-dry GPU training launch")
-    device = torch_module.cuda.current_device()
-    total = float(torch_module.cuda.get_device_properties(device).total_memory) / 1024**3
+            observed = json.loads(done.stdout.strip().splitlines()[-1])
+        except (json.JSONDecodeError, IndexError) as exc:
+            raise RegistryError(
+                f"GPU memory guard returned invalid output: {done.stdout}"
+            ) from exc
+        total = float(observed["total_memory_gib"])
+        device_name = str(observed["device"])
+    else:
+        if not torch_module.cuda.is_available():
+            raise RegistryError(
+                "CUDA is unavailable; refusing non-dry GPU training launch"
+            )
+        device = torch_module.cuda.current_device()
+        total = (
+            float(torch_module.cuda.get_device_properties(device).total_memory)
+            / 1024**3
+        )
+        device_name = torch_module.cuda.get_device_name(device)
     required = float(required)
     if total < required:
-        raise RegistryError(f"GPU has {total:.1f} GiB; memory guard requires {required:.1f} GiB")
-    return {"device": torch_module.cuda.get_device_name(device), "total_memory_gib": round(total, 3)}
+        raise RegistryError(
+            f"GPU has {total:.1f} GiB; memory guard requires {required:.1f} GiB"
+        )
+    return {"device": device_name, "total_memory_gib": round(total, 3)}
 
 
-def execute(item: Experiment, dry_run: bool, resume: bool = False,
-            run_dir: Path | None = None) -> dict[str, Any]:
+def execute(
+    item: Experiment, dry_run: bool, resume: bool = False, run_dir: Path | None = None
+) -> dict[str, Any]:
     validate(item.data, item.source, True, True)
     run_dir = run_dir or RUNS / item.name
     out = output_dir(item.data, run_dir)
-    free = shutil.disk_usage(run_dir.parent if run_dir.parent.exists() else RUNS.parent).free / 1024**3
+    free = (
+        shutil.disk_usage(
+            run_dir.parent if run_dir.parent.exists() else RUNS.parent
+        ).free
+        / 1024**3
+    )
     required = float(item.data["resources"].get("min_free_disk_gib", 0))
     if free < required:
         raise RegistryError(f"{free:.1f} GiB free; {required:.1f} GiB required")
+    backend = backends.canonical_backend(item.data.get("backend"))
     resume_config = None
     if resume:
+        if backend == "isaac_groot":
+            raise RegistryError("native Isaac resume is not yet supported by trainctl")
         resume_config = out / "checkpoints/last/pretrained_model/train_config.json"
         if not resume_config.is_file():
             raise RegistryError(f"resume config missing: {resume_config}")
@@ -563,48 +795,90 @@ def execute(item: Experiment, dry_run: bool, resume: bool = False,
         raise RegistryError(f"existing output directory: {out}")
     argv = command(item.data, out, resume_config)
     if dry_run:
-        return {"run_name": item.name, "run_dir": str(run_dir), "output_dir": str(out),
-                "command": argv}
+        return {
+            "run_name": item.name,
+            "run_dir": str(run_dir),
+            "output_dir": str(out),
+            "command": argv,
+        }
     validate_gpu_resources(item.data)
-    if shutil.which("lerobot-train") is None:
-        raise RegistryError("lerobot-train is not on PATH; use training/grootctl")
+    executable = Path(argv[0])
+    if not executable.is_file() and shutil.which(argv[0]) is None:
+        raise RegistryError(f"backend launcher is unavailable: {argv[0]}")
     if run_dir.exists() and not resume:
         raise RegistryError(f"existing run directory: {run_dir}")
     run_dir.mkdir(parents=True, exist_ok=resume)
     if not resume:
-        atomic_text(run_dir / "source_config.yaml", item.source.read_text(encoding="utf-8"))
+        atomic_text(
+            run_dir / "source_config.yaml", item.source.read_text(encoding="utf-8")
+        )
         atomic_yaml(run_dir / "resolved_config.yaml", item.data)
         atomic_text(run_dir / "command.txt", shlex.join(argv) + "\n")
         atomic_json(run_dir / "manifest.json", manifest(item, argv, run_dir))
     result = blank_result(item.name)
     result["status"]["state"] = "running"
     result["timing"]["started_utc"] = now()
-    result["artifacts"].update({
-        "resolved_config": str(run_dir / "resolved_config.yaml"),
-        "manifest": str(run_dir / "manifest.json"), "train_log": str(run_dir / "train.log"),
-    })
+    result["artifacts"].update(
+        {
+            "resolved_config": str(run_dir / "resolved_config.yaml"),
+            "manifest": str(run_dir / "manifest.json"),
+            "train_log": str(run_dir / "train.log"),
+        }
+    )
     atomic_yaml(run_dir / "result.yaml", result)
     started = time.monotonic()
-    code, timed_out = stream(argv, run_dir / "train.log",
-                             float(item.data["resources"]["timeout_hours"]) * 3600, resume)
-    text = (run_dir / "train.log").read_text(errors="replace")[-2_000_000:]
-    category = None if code == 0 else (
-        "timeout" if timed_out else "oom" if OOM_RE.search(text)
-        else "signal" if code >= 128 else "trainer_error"
+    code, timed_out = stream(
+        argv,
+        run_dir / "train.log",
+        float(item.data["resources"]["timeout_hours"]) * 3600,
+        resume,
     )
-    result["status"] = {"state": "completed" if code == 0 else "failed",
-                        "exit_code": code, "failure_category": category}
-    result["timing"].update({"finished_utc": now(),
-                             "runtime_seconds": round(time.monotonic() - started, 3)})
+    text = (run_dir / "train.log").read_text(errors="replace")[-2_000_000:]
+    category = (
+        None
+        if code == 0
+        else (
+            "timeout"
+            if timed_out
+            else (
+                "oom"
+                if OOM_RE.search(text)
+                else "signal" if code >= 128 else "trainer_error"
+            )
+        )
+    )
+    result["status"] = {
+        "state": "completed" if code == 0 else "failed",
+        "exit_code": code,
+        "failure_category": category,
+    }
+    result["timing"].update(
+        {"finished_utc": now(), "runtime_seconds": round(time.monotonic() - started, 3)}
+    )
     observed = final_training_metrics(text)
     if observed:
-        result["metrics"].update({
-            "final_train_loss": observed["loss"],
-            "samples_per_second": observed["samples_per_second"],
-            "cuda_memory_gib": observed["cuda_memory_gib"],
-        })
-    model = out / "checkpoints/last/pretrained_model"
-    if model.exists():
+        result["metrics"].update(
+            {
+                "final_train_loss": observed["loss"],
+                "samples_per_second": observed["samples_per_second"],
+                "cuda_memory_gib": observed["cuda_memory_gib"],
+            }
+        )
+    backend = backends.canonical_backend(item.data.get("backend"))
+    if backend == "isaac_groot":
+        native_root = out / item.name
+        checkpoints_found = sorted(
+            (path for path in native_root.glob("checkpoint-*") if path.is_dir()),
+            key=lambda path: int(path.name.removeprefix("checkpoint-")),
+        )
+        model = (
+            native_root
+            if (native_root / "config.json").is_file()
+            else (checkpoints_found[-1] if checkpoints_found else native_root)
+        )
+    else:
+        model = out / "checkpoints/last/pretrained_model"
+    if model.exists() and (model / "config.json").is_file():
         result["artifacts"]["pretrained_model"] = str(model.resolve())
         result["best_checkpoint"] = {
             "step": observed["step"] if observed else None,
@@ -612,7 +886,9 @@ def execute(item: Experiment, dry_run: bool, resume: bool = False,
             "selection_reason": "Last saved endpoint; not quality-selected.",
         }
     if code == 0:
-        result["summary"] = "Trainer exited successfully. Review evaluation before selecting a checkpoint."
+        result["summary"] = (
+            "Trainer exited successfully. Review evaluation before selecting a checkpoint."
+        )
     atomic_yaml(run_dir / "result.yaml", result)
     return result
 
@@ -642,13 +918,16 @@ def system_tmux_environment() -> dict[str, str]:
 
 
 def tmux_has_session(name: str) -> bool:
-    return subprocess.run(
-        ["tmux", "has-session", "-t", f"={name}"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        env=system_tmux_environment(),
-        check=False,
-    ).returncode == 0
+    return (
+        subprocess.run(
+            ["tmux", "has-session", "-t", f"={name}"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=system_tmux_environment(),
+            check=False,
+        ).returncode
+        == 0
+    )
 
 
 def launch_tmux(
@@ -660,8 +939,10 @@ def launch_tmux(
     dry_run: bool = False,
 ) -> dict[str, Any]:
     if shutil.which("tmux") is None:
-        raise RegistryError("tmux is unavailable; use grootctl run in a persistent terminal")
-    session = session or f"groot-{item.name}"
+        raise RegistryError(
+            "tmux is unavailable; use trainctl run in a persistent terminal"
+        )
+    session = session or f"train-{item.name}"
     if not NAME_RE.fullmatch(session):
         raise RegistryError(f"unsafe tmux session name {session!r}")
     if tmux_has_session(session):
@@ -676,13 +957,14 @@ def launch_tmux(
     launch_log = RUNS / "_launch_logs" / f"{item.name}.tmux.log"
     train_log = effective_run_dir / "train.log"
     if effective_run_dir == RUNS / item.name:
-        status_command = "{} result show {}".format(ROOT / "grootctl", item.name)
+        status_command = "{} result show {}".format(CLI, item.name)
     else:
         status_command = "sed -n 1,220p {}".format(
             shlex.quote(str(effective_run_dir / "result.yaml"))
         )
 
-    child = [str(ROOT / "grootctl"), "run", str(item.source)]
+    foreground = "exec" if CLI.name == "trainctl" else "run"
+    child = [str(CLI), foreground, str(item.source)]
     for value in sets:
         child.extend(["--set", value])
     if resume:
@@ -711,9 +993,17 @@ def launch_tmux(
         },
     }
     if dry_run:
-        report["preflight"] = "config, dataset, and disk checks passed; GPU launch check skipped"
+        report["preflight"] = (
+            "config, dataset, and disk checks passed; GPU launch check skipped"
+        )
         report["tmux_command"] = [
-            "tmux", "new-session", "-d", "-s", session, "-c", str(WORKSPACE),
+            "tmux",
+            "new-session",
+            "-d",
+            "-s",
+            session,
+            "-c",
+            str(WORKSPACE),
             shell_command,
         ]
         return report
@@ -727,8 +1017,16 @@ def launch_tmux(
     launch_log.parent.mkdir(parents=True, exist_ok=True)
     try:
         subprocess.run(
-            ["tmux", "new-session", "-d", "-s", session, "-c", str(WORKSPACE),
-             shell_command],
+            [
+                "tmux",
+                "new-session",
+                "-d",
+                "-s",
+                session,
+                "-c",
+                str(WORKSPACE),
+                shell_command,
+            ],
             check=True,
             text=True,
             stdout=subprocess.PIPE,
@@ -740,7 +1038,11 @@ def launch_tmux(
         raise RegistryError(f"tmux launch failed: {detail or exc}") from exc
     time.sleep(0.5)
     if not tmux_has_session(session):
-        detail = launch_log.read_text(errors="replace")[-4000:] if launch_log.is_file() else ""
+        detail = (
+            launch_log.read_text(errors="replace")[-4000:]
+            if launch_log.is_file()
+            else ""
+        )
         suffix = f"\nStartup output:\n{detail}" if detail else ""
         raise RegistryError(f"tmux session exited during startup: {session}{suffix}")
     return report
@@ -749,7 +1051,11 @@ def launch_tmux(
 def print_tmux_report(report: Mapping[str, Any]) -> None:
     commands = report["commands"]
     dry = report["state"] == "dry_run"
-    print("DRY RUN: no tmux session was started." if dry else "STARTED: training is running in a detached tmux session.")
+    print(
+        "DRY RUN: no tmux session was started."
+        if dry
+        else "STARTED: training is running in a detached tmux session."
+    )
     if dry:
         print("A real launch will continue if its terminal or SSH connection closes.")
     else:
@@ -771,7 +1077,11 @@ def print_tmux_report(report: Mapping[str, Any]) -> None:
     print("Check progress without attaching:")
     print("  {}".format(commands["train_log"]))
     print("  {}".format(commands["status"]))
-    print("  {}  # includes failures before train.log exists".format(commands["launch_log"]))
+    print(
+        "  {}  # includes failures before train.log exists".format(
+            commands["launch_log"]
+        )
+    )
     print()
     print("List training sessions:")
     print("  {}".format(commands["list_sessions"]))
@@ -780,25 +1090,40 @@ def print_tmux_report(report: Mapping[str, Any]) -> None:
     print("  {}".format(commands["stop"]))
 
 
-def resolve_queue(reference: str | Path) -> tuple[Path, dict[str, Any], list[Experiment]]:
+def resolve_queue(
+    reference: str | Path,
+) -> tuple[Path, dict[str, Any], list[Experiment]]:
     path = find(reference, QUEUES)
     data = layered(path)
-    allowed = {"schema_version", "name", "description", "continue_on_failure",
-               "min_free_disk_gib", "max_attempts", "time_budget_hours", "runs"}
+    allowed = {
+        "schema_version",
+        "name",
+        "description",
+        "continue_on_failure",
+        "min_free_disk_gib",
+        "max_attempts",
+        "time_budget_hours",
+        "runs",
+    }
     if set(data) - allowed or data.get("schema_version") != 1:
         raise RegistryError(f"{path}: invalid queue schema")
     if not NAME_RE.fullmatch(str(data.get("name", ""))):
         raise RegistryError(f"{path}: unsafe queue name")
     if not isinstance(data.get("runs"), list) or not data["runs"]:
         raise RegistryError(f"{path}: runs must be non-empty")
-    if int(data.get("max_attempts", 0)) <= 0 or float(data.get("time_budget_hours", 0)) <= 0:
+    if (
+        int(data.get("max_attempts", 0)) <= 0
+        or float(data.get("time_budget_hours", 0)) <= 0
+    ):
         raise RegistryError(f"{path}: max_attempts/time_budget_hours must be positive")
     items = []
     for index, entry in enumerate(data["runs"]):
         if not isinstance(entry, dict) or not isinstance(entry.get("config"), str):
             raise RegistryError(f"{path}: runs[{index}] needs config")
         sets = entry.get("overrides", [])
-        if not isinstance(sets, list) or not all(isinstance(value, str) for value in sets):
+        if not isinstance(sets, list) or not all(
+            isinstance(value, str) for value in sets
+        ):
             raise RegistryError(f"{path}: overrides must be key=value strings")
         items.append(experiment(entry["config"], sets, path.parent, True, True))
     names = [item.name for item in items]
@@ -811,9 +1136,13 @@ def resolve_queue(reference: str | Path) -> tuple[Path, dict[str, Any], list[Exp
 def run_queue(reference: str | Path, dry_run: bool) -> dict[str, Any]:
     path, queue, items = resolve_queue(reference)
     if dry_run:
-        return {"queue": str(path), "runs": [
-            execute(item, True, run_dir=RUNS / item.name / "attempt-1") for item in items
-        ]}
+        return {
+            "queue": str(path),
+            "runs": [
+                execute(item, True, run_dir=RUNS / item.name / "attempt-1")
+                for item in items
+            ],
+        }
     state_dir = RUNS / "_queues" / queue["name"]
     state_dir.mkdir(parents=True, exist_ok=True)
     lock = (state_dir / "queue.lock").open("w")
@@ -821,8 +1150,15 @@ def run_queue(reference: str | Path, dry_run: bool) -> dict[str, Any]:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError as exc:
         raise RegistryError(f"queue lock held: {state_dir / 'queue.lock'}") from exc
-    status = {"schema_version": 1, "queue": queue["name"], "source": str(path),
-              "state": "running", "started_utc": now(), "finished_utc": None, "runs": []}
+    status = {
+        "schema_version": 1,
+        "queue": queue["name"],
+        "source": str(path),
+        "state": "running",
+        "started_utc": now(),
+        "finished_utc": None,
+        "runs": [],
+    }
     status_path, started = state_dir / "queue_status.yaml", time.monotonic()
     atomic_yaml(status_path, status)
     try:
@@ -836,16 +1172,27 @@ def run_queue(reference: str | Path, dry_run: bool) -> dict[str, Any]:
                 break
             succeeded = False
             for attempt in range(1, int(queue["max_attempts"]) + 1):
-                event = {"run_name": item.name, "attempt": attempt, "state": "running",
-                         "started_utc": now()}
+                event = {
+                    "run_name": item.name,
+                    "attempt": attempt,
+                    "state": "running",
+                    "started_utc": now(),
+                }
                 status["runs"].append(event)
                 atomic_yaml(status_path, status)
                 try:
-                    result = execute(item, False, run_dir=RUNS / item.name / f"attempt-{attempt}")
+                    result = execute(
+                        item, False, run_dir=RUNS / item.name / f"attempt-{attempt}"
+                    )
                     event.update(result["status"])
                 except RegistryError as exc:
-                    event.update({"state": "blocked", "failure_category": "registry_guard",
-                                  "error": str(exc)})
+                    event.update(
+                        {
+                            "state": "blocked",
+                            "failure_category": "registry_guard",
+                            "error": str(exc),
+                        }
+                    )
                 event["finished_utc"] = now()
                 atomic_yaml(status_path, status)
                 if event["state"] == "completed":
@@ -866,7 +1213,9 @@ def run_queue(reference: str | Path, dry_run: bool) -> dict[str, Any]:
 
 def dataset_spec(reference: str | Path) -> dict[str, Any]:
     path = find(reference, DATASETS)
-    data = substitute(read_yaml(path), {"workspace": str(WORKSPACE), "training_root": str(ROOT)})
+    data = substitute(
+        read_yaml(path), {"workspace": str(WORKSPACE), "training_root": str(ROOT)}
+    )
     for key in ("name", "repo_id", "revision", "download", "prepared", "contract"):
         if key not in data:
             raise RegistryError(f"{path}: missing {key}")
@@ -894,26 +1243,50 @@ def validate_dataset(data: Mapping[str, Any], decode: bool) -> dict[str, Any]:
     preflight = preflight_dataset_root(root)
     decoded = None
     if decode:
-        try:
-            import numpy as np
-            from lerobot.datasets.lerobot_dataset import LeRobotDataset
-        except ImportError as exc:
-            raise RegistryError("decoded validation requires training/grootctl") from exc
-        dataset = LeRobotDataset(repo_id=str(data.get("training", {}).get("repo_id", data["repo_id"])), root=root,
-                                 video_backend="torchcodec")
-        sample = dataset[0]
-        state, action = np.asarray(sample["observation.state"]), np.asarray(sample["action"])
-        if state.shape[-1] != contract["state"]["dim"] or \
-                action.shape[-1] != contract["action"]["dim"]:
+        with tempfile.TemporaryDirectory(
+            prefix="trainctl-lerobot-validate-"
+        ) as temporary:
+            output = Path(temporary) / "decoded.json"
+            subprocess.run(
+                [
+                    str(ROOT / "scripts/run_backend.sh"),
+                    "lerobot",
+                    "python",
+                    str(ROOT / "data_pipeline/validate_lerobot_dataset.py"),
+                    "--dataset",
+                    str(root),
+                    "--repo-id",
+                    str(data.get("training", {}).get("repo_id", data["repo_id"])),
+                    "--video-backend",
+                    str(data.get("training", {}).get("video_backend", "torchcodec")),
+                    "--output",
+                    str(output),
+                ],
+                check=True,
+            )
+            decoded = json.loads(output.read_text(encoding="utf-8"))
+        if (
+            decoded["state_shape"][-1] != contract["state"]["dim"]
+            or decoded["action_shape"][-1] != contract["action"]["dim"]
+        ):
             raise RegistryError("decoded state/action dimension mismatch")
-        if not np.isfinite(state).all() or not np.isfinite(action).all():
+        if not decoded["finite"]:
             raise RegistryError("decoded state/action contains NaN/Inf")
-        decoded = {"sample": 0, "state_shape": list(state.shape),
-                   "action_shape": list(action.shape), "finite": True}
-    return {"root": str(root), "metadata": {
-        key: metadata.get(key) for key in ("codebase_version", "total_episodes",
-                                          "total_frames", "fps")
-    }, "preflight": preflight, "fingerprint": fingerprint_dataset(root), "decoded": decoded}
+        expected_images = {
+            camera["key"]: camera["shape"] for camera in contract.get("cameras", [])
+        }
+        if decoded.get("images") != expected_images:
+            raise RegistryError("decoded image keys/shapes do not match the contract")
+    return {
+        "root": str(root),
+        "metadata": {
+            key: metadata.get(key)
+            for key in ("codebase_version", "total_episodes", "total_frames", "fps")
+        },
+        "preflight": preflight,
+        "fingerprint": fingerprint_dataset(root),
+        "decoded": decoded,
+    }
 
 
 def preflight_dataset_root(root: Path) -> dict[str, Any]:
@@ -921,11 +1294,55 @@ def preflight_dataset_root(root: Path) -> dict[str, Any]:
     try:
         from data_pipeline.preflight_lerobot_dataset import DatasetPreflightError, audit
     except ImportError as exc:
-        raise RegistryError("LeRobot dataset preflight dependencies are unavailable") from exc
+        raise RegistryError(
+            "LeRobot dataset preflight dependencies are unavailable"
+        ) from exc
     try:
         return audit(root)
     except DatasetPreflightError as exc:
         raise RegistryError(f"dataset preflight failed: {exc}") from exc
+
+
+def register_verified_legacy_download(
+    data: Mapping[str, Any], destination: Path
+) -> bool:
+    """Recover a missing marker only from an exact registered SHA-256 manifest."""
+    expected = data.get("source_manifest_sha256")
+    if not expected:
+        return False
+    configured = data.get("download", {}).get("manifest")
+    manifest = (
+        Path(str(configured))
+        if configured
+        else destination.with_name(f"{destination.name}_SHA256SUMS.txt")
+    )
+    if not manifest.is_file() or sha256_file(manifest) != expected:
+        raise RegistryError(
+            f"legacy source marker is missing and manifest identity failed: {manifest}"
+        )
+    checked = subprocess.run(
+        ["sha256sum", "-c", str(manifest)],
+        cwd=destination,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        check=False,
+    )
+    if checked.returncode != 0:
+        raise RegistryError(
+            f"legacy source checksum verification failed: {checked.stdout}"
+        )
+    atomic_json(
+        destination / ".groot_registry_download.json",
+        {
+            "repo_id": data["repo_id"],
+            "revision": data["revision"],
+            "payload_manifest": str(manifest.resolve()),
+            "payload_manifest_sha256": expected,
+            "source_kind": "verified_legacy_manifest",
+        },
+    )
+    return True
 
 
 def download_dataset(data: Mapping[str, Any]) -> Path:
@@ -933,35 +1350,57 @@ def download_dataset(data: Mapping[str, Any]) -> Path:
     marker = destination / ".groot_registry_download.json"
     expected = {"repo_id": data["repo_id"], "revision": data["revision"]}
     if destination.exists() and any(destination.iterdir()):
+        if not marker.is_file() and register_verified_legacy_download(
+            data, destination
+        ):
+            return destination
         try:
             recorded = json.loads(marker.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise RegistryError(f"refusing non-empty unregistered destination: {destination}") from exc
+            raise RegistryError(
+                f"refusing non-empty unregistered destination: {destination}"
+            ) from exc
         if any(recorded.get(key) != value for key, value in expected.items()):
-            raise RegistryError(f"refusing non-empty or mismatched destination: {destination}")
+            raise RegistryError(
+                f"refusing non-empty or mismatched destination: {destination}"
+            )
         if recorded.get("source_kind") == "direct_local_directory":
             return destination
         if recorded.get("payload_manifest_sha256"):
             return destination
     else:
         from huggingface_hub import snapshot_download
+
         destination.mkdir(parents=True, exist_ok=True)
-        snapshot_download(repo_id=str(data["repo_id"]), repo_type="dataset",
-                          revision=str(data["revision"]), local_dir=destination)
+        snapshot_download(
+            repo_id=str(data["repo_id"]),
+            repo_type="dataset",
+            revision=str(data["revision"]),
+            local_dir=destination,
+        )
 
     manifest_text, digest, file_count, byte_count = payload_manifest(destination)
-    manifest_path = Path(str(data["download"].get(
-        "manifest",
-        ROOT / "artifacts/manifests" / f"{data['name']}_{str(data['revision'])[:12]}_SHA256SUMS.txt",
-    )))
+    manifest_path = Path(
+        str(
+            data["download"].get(
+                "manifest",
+                ROOT
+                / "artifacts/manifests"
+                / f"{data['name']}_{str(data['revision'])[:12]}_SHA256SUMS.txt",
+            )
+        )
+    )
     atomic_text(manifest_path, manifest_text)
-    atomic_json(marker, {
-        **expected,
-        "payload_manifest": str(manifest_path.resolve()),
-        "payload_manifest_sha256": digest,
-        "payload_file_count": file_count,
-        "payload_bytes": byte_count,
-    })
+    atomic_json(
+        marker,
+        {
+            **expected,
+            "payload_manifest": str(manifest_path.resolve()),
+            "payload_manifest_sha256": digest,
+            "payload_file_count": file_count,
+            "payload_bytes": byte_count,
+        },
+    )
     return destination
 
 
@@ -985,12 +1424,16 @@ def prepare_dataset(data: Mapping[str, Any]) -> Path:
             return destination
         if destination.is_dir():
             return destination
-        raise RegistryError("no preparation command is configured and prepared.root does not exist")
+        raise RegistryError(
+            "no preparation command is configured and prepared.root does not exist"
+        )
     script = Path(str(preparation["script"]))
     if not source.is_dir() or not script.is_file():
         raise RegistryError("downloaded source or preparation script is missing")
     if source == destination:
-        raise RegistryError("preparation must write a separate derivative, not mutate the download")
+        raise RegistryError(
+            "preparation must write a separate derivative, not mutate the download"
+        )
 
     provenance = download_provenance(data)
     expected_manifest = data.get("source_manifest_sha256") or provenance.get(
@@ -1008,7 +1451,10 @@ def prepare_dataset(data: Mapping[str, Any]) -> Path:
             raise RegistryError(f"prepared receipt source mismatch: {receipt_path}")
         if receipt.get("source_revision") != data["revision"]:
             raise RegistryError(f"prepared receipt revision mismatch: {receipt_path}")
-        if expected_manifest and receipt.get("source_manifest_sha256") != expected_manifest:
+        if (
+            expected_manifest
+            and receipt.get("source_manifest_sha256") != expected_manifest
+        ):
             raise RegistryError(f"prepared receipt manifest mismatch: {receipt_path}")
         return destination
 
@@ -1048,22 +1494,33 @@ def audit_dataset_captions(data: Mapping[str, Any]) -> dict[str, Any] | None:
         )
     except CaptionAuditError as exc:
         raise RegistryError(f"caption audit failed: {exc}") from exc
-    output = Path(str(settings.get(
-        "output",
-        ROOT / "artifacts/reports" / f"{data['name']}_caption_audit.json",
-    )))
+    output = Path(
+        str(
+            settings.get(
+                "output",
+                ROOT / "artifacts/reports" / f"{data['name']}_caption_audit.json",
+            )
+        )
+    )
     atomic_json(output, report)
-    return {"output": str(output), "language_contract_ready": report["language_contract_ready"]}
+    return {
+        "output": str(output),
+        "language_contract_ready": report["language_contract_ready"],
+    }
 
 
-def dataset_pipeline(data: Mapping[str, Any]) -> dict[str, Any]:
-    """Run the idempotent Hub download, audit, preparation, and decode checks."""
+def dataset_pipeline(
+    data: Mapping[str, Any], target: str = "lerobot"
+) -> dict[str, Any]:
+    """Prepare canonical LeRobot v3 and optionally its native Isaac derivative."""
+    if target not in {"all", "lerobot", "isaac-groot"}:
+        raise RegistryError(f"unknown dataset pipeline target: {target}")
     source = download_dataset(data)
     source_preflight = preflight_dataset_root(source)
     caption = audit_dataset_captions(data)
     prepared = prepare_dataset(data)
     checked = validate_dataset(data, decode=True)
-    return {
+    result = {
         "dataset": data["name"],
         "revision": data["revision"],
         "downloaded": str(source),
@@ -1072,6 +1529,17 @@ def dataset_pipeline(data: Mapping[str, Any]) -> dict[str, Any]:
         "prepared": str(prepared),
         "validation": checked,
     }
+    if target in {"all", "isaac-groot"}:
+        try:
+            from data_pipeline.isaac_groot import (
+                IsaacDatasetError,
+                prepare_isaac_dataset,
+            )
+
+            result["isaac_groot"] = prepare_isaac_dataset(data)
+        except IsaacDatasetError as exc:
+            raise RegistryError(str(exc)) from exc
+    return result
 
 
 def import_wandb(item: Experiment, run_id: str | None, output: Path | None) -> Path:
@@ -1080,6 +1548,7 @@ def import_wandb(item: Experiment, run_id: str | None, output: Path | None) -> P
     if not tracking.get("entity") or not tracking.get("project") or not run_id:
         raise RegistryError("W&B entity, project, and run ID are required")
     import wandb
+
     run = wandb.Api().run(f"{tracking['entity']}/{tracking['project']}/{run_id}")
     summary = dict(run.summary)
     if output is not None:
@@ -1092,8 +1561,12 @@ def import_wandb(item: Experiment, run_id: str | None, output: Path | None) -> P
         except RegistryError:
             path = RUNS / item.name / "result.yaml"
     result = read_yaml(path) if path.is_file() else blank_result(item.name)
-    result["wandb"] = {"entity": tracking["entity"], "project": tracking["project"],
-                       "run_id": run_id, "url": run.url}
+    result["wandb"] = {
+        "entity": tracking["entity"],
+        "project": tracking["project"],
+        "run_id": run_id,
+        "url": run.url,
+    }
     aliases = {
         "final_eval_loss": ("eval_loss", "eval/loss"),
         "final_train_loss": ("train_loss", "train/loss", "loss"),
@@ -1101,10 +1574,11 @@ def import_wandb(item: Experiment, run_id: str | None, output: Path | None) -> P
         "cuda_memory_gib": ("cuda_memory_gib", "train/cuda_memory_gib"),
     }
     for destination, names in aliases.items():
-        result["metrics"][destination] = next((summary[name] for name in names if name in summary), None)
+        result["metrics"][destination] = next(
+            (summary[name] for name in names if name in summary), None
+        )
     atomic_yaml(path, result)
     return path
-
 
 
 def portable_path(path: Path) -> str:
@@ -1122,13 +1596,16 @@ def resolve_hf_dataset_revision(repo_id: str, revision: str) -> str:
         return revision
     try:
         from huggingface_hub import HfApi
+
         resolved = HfApi().dataset_info(repo_id=repo_id, revision=revision).sha
     except Exception as exc:
         raise RegistryError(
             f"cannot resolve Hugging Face dataset revision {repo_id}@{revision}: {exc}"
         ) from exc
     if not resolved or not re.fullmatch(r"[0-9a-f]{40}", resolved):
-        raise RegistryError(f"Hub returned an invalid dataset commit for {repo_id}@{revision}")
+        raise RegistryError(
+            f"Hub returned an invalid dataset commit for {repo_id}@{revision}"
+        )
     return resolved
 
 
@@ -1173,14 +1650,33 @@ def omx_insert_contract(robot_revision: str, task: str) -> dict[str, Any]:
             "right_wrist": "native 640x480 at 15 fps; identity",
         },
         "video_encoding": {
-            "geometry": "identity", "codec": "h264", "gop_size": 15,
-            "crf": 18, "preset": "medium",
+            "geometry": "identity",
+            "codec": "h264",
+            "gop_size": 15,
+            "crf": 18,
+            "preset": "medium",
         },
-        "cameras": [
-            {"key": key, "shape": [3, 480, 640]} for key in OMX_INSERT_CAMERAS
-        ],
+        "cameras": [{"key": key, "shape": [3, 480, 640]} for key in OMX_INSERT_CAMERAS],
         "state": {"dim": 16, "names": list(OMX_INSERT_JOINTS)},
         "action": {"dim": 16, "names": list(OMX_INSERT_JOINTS)},
+    }
+
+
+def isaac_adapter_defaults(name: str) -> dict[str, Any]:
+    """Make the generated native derivative explicit in each registration."""
+    return {
+        "isaac_groot": {
+            "root": portable_path(
+                ROOT / "artifacts" / "datasets" / f"{name}_isaac_v21"
+            ),
+            "modality_config_path": (
+                "${training_root}/configs/modalities/f2_arms16_absolute_h40.py"
+            ),
+            "modality_json_path": (
+                "${training_root}/configs/modalities/f2_arms16_modality.json"
+            ),
+            "embodiment_tag": "NEW_EMBODIMENT",
+        }
     }
 
 
@@ -1215,8 +1711,12 @@ def register_hf_omx_dataset(
 
     pinned = resolve_hf_dataset_revision(repo_id, revision)
     source_root = source_root or ROOT / "artifacts/datasets" / f"{name}_source"
-    prepared_root = prepared_root or ROOT / "artifacts/datasets" / f"{name}_arms16_gop15"
-    manifest_path = ROOT / "artifacts/manifests" / f"{name}_{pinned[:12]}_SHA256SUMS.txt"
+    prepared_root = (
+        prepared_root or ROOT / "artifacts/datasets" / f"{name}_arms16_gop15"
+    )
+    manifest_path = (
+        ROOT / "artifacts/manifests" / f"{name}_{pinned[:12]}_SHA256SUMS.txt"
+    )
     data = {
         "schema_version": 1,
         "name": name,
@@ -1255,6 +1755,7 @@ def register_hf_omx_dataset(
             "video_backend": "torchcodec",
             "eval_split": eval_split,
         },
+        "adapters": isaac_adapter_defaults(name),
         "contract": omx_insert_contract(robot_revision, task),
     }
     atomic_yaml(destination, data)
@@ -1287,7 +1788,9 @@ def register_local_omx_dataset(
 
     source_root = source_root.expanduser().resolve()
     if not source_root.is_dir() or not any(source_root.iterdir()):
-        raise RegistryError(f"--source-root must be a non-empty directory: {source_root}")
+        raise RegistryError(
+            f"--source-root must be a non-empty directory: {source_root}"
+        )
     revision = (source_revision or "local").strip()
     if not revision:
         raise RegistryError("--source-revision must be non-empty when provided")
@@ -1300,7 +1803,9 @@ def register_local_omx_dataset(
         raise RegistryError(f"dataset registration already exists: {destination}")
 
     repo_id = f"local/{name}"
-    prepared_root = prepared_root or ROOT / "artifacts/datasets" / f"{name}_arms16_gop15"
+    prepared_root = (
+        prepared_root or ROOT / "artifacts/datasets" / f"{name}_arms16_gop15"
+    )
     metadata = info(source_root)
     registration: dict[str, Any] = {
         "source_kind": "direct_local_directory",
@@ -1347,13 +1852,17 @@ def register_local_omx_dataset(
             for key in ("codebase_version", "total_episodes", "total_frames")
             if key in metadata
         },
+        "adapters": isaac_adapter_defaults(name),
         "contract": omx_insert_contract(robot_revision, task),
     }
-    atomic_json(source_root / ".groot_registry_download.json", {
-        "repo_id": repo_id,
-        "revision": revision,
-        "source_kind": "direct_local_directory",
-    })
+    atomic_json(
+        source_root / ".groot_registry_download.json",
+        {
+            "repo_id": repo_id,
+            "revision": revision,
+            "source_kind": "direct_local_directory",
+        },
+    )
     atomic_yaml(destination, data)
     return destination
 
@@ -1378,8 +1887,8 @@ def hf_registration_report(path: Path) -> dict[str, Any]:
             "source": registration.get("task_source", "registration"),
         },
         "next": [
-            f"{ROOT / 'grootctl'} dataset show {data['name']}",
-            f"{ROOT / 'grootctl'} dataset pipeline {data['name']}",
+            f"{ROOT / 'trainctl'} dataset show {data['name']}",
+            f"{ROOT / 'trainctl'} dataset pipeline {data['name']}",
         ],
     }
 
@@ -1405,16 +1914,25 @@ def local_registration_report(path: Path) -> dict[str, Any]:
             "source": registration.get("task_source", "registration"),
         },
         "next": [
-            f"{ROOT / 'grootctl'} dataset show {data['name']}",
-            f"{ROOT / 'grootctl'} dataset pipeline {data['name']}",
+            f"{ROOT / 'trainctl'} dataset show {data['name']}",
+            f"{ROOT / 'trainctl'} dataset pipeline {data['name']}",
         ],
     }
 
 
-def init_dataset(name: str, repo_id: str, revision: str, root: Path,
-                 robot_revision: str, training_repo_id: str | None,
-                 eval_split: float, state_units: str, action_units: str,
-                 language_convention: str, embodiment: str) -> Path:
+def init_dataset(
+    name: str,
+    repo_id: str,
+    revision: str,
+    root: Path,
+    robot_revision: str,
+    training_repo_id: str | None,
+    eval_split: float,
+    state_units: str,
+    action_units: str,
+    language_convention: str,
+    embodiment: str,
+) -> Path:
     """Create the small dataset identity file used by training configs."""
     if not NAME_RE.fullmatch(name):
         raise RegistryError(f"unsafe name {name!r}")
@@ -1456,36 +1974,51 @@ def init_dataset(name: str, repo_id: str, revision: str, root: Path,
             for key in ("codebase_version", "total_episodes", "total_frames")
             if key in metadata
         }
-        check = substitute(data, {
-            "workspace": str(WORKSPACE), "training_root": str(ROOT),
-        })
+        check = substitute(
+            data,
+            {
+                "workspace": str(WORKSPACE),
+                "training_root": str(ROOT),
+            },
+        )
         resolved_contract(check)
     atomic_yaml(destination, data)
     return destination
 
 
-def init_config(name: str, dataset_reference: str) -> Path:
+def init_config(
+    name: str,
+    dataset_reference: str,
+    policy: str = "lerobot-groot",
+) -> Path:
     """Create a small editable run config without overwriting existing work."""
     if not NAME_RE.fullmatch(name):
         raise RegistryError(f"unsafe name {name!r}")
     dataset_spec(dataset_reference)
+    try:
+        backend = backends.canonical_backend(policy)
+    except ValueError as exc:
+        raise RegistryError(str(exc)) from exc
     destination = CONFIGS / f"{name}.yaml"
     if destination.exists():
         raise RegistryError(f"config already exists: {destination}")
-    atomic_yaml(destination, {
-        "_base": "../base/groot_n17.yaml",
-        "name": name,
-        "description": "REPLACE ME: describe this run's purpose and deliberate changes.",
-        "hypothesis": "REPLACE ME: state a falsifiable expectation and reason.",
-        "dataset_ref": dataset_reference,
-        "annotation": {
-            "owner": "intern-team",
-            "notes": (
-                "REPLACE ME: add dataset-specific evaluation criteria, caveats, "
-                "and intended comparisons."
-            ),
+    atomic_yaml(
+        destination,
+        {
+            "_base": backends.POLICY_BASES[backend],
+            "name": name,
+            "description": "REPLACE ME: describe this run's purpose and deliberate changes.",
+            "hypothesis": "REPLACE ME: state a falsifiable expectation and reason.",
+            "dataset_ref": dataset_reference,
+            "annotation": {
+                "owner": "intern-team",
+                "notes": (
+                    "REPLACE ME: add dataset-specific evaluation criteria, caveats, "
+                    "and intended comparisons."
+                ),
+            },
         },
-    })
+    )
     return destination
 
 
@@ -1514,31 +2047,48 @@ def list_results() -> list[dict[str, Any]]:
     summaries = []
     if not RUNS.is_dir():
         return summaries
-    for run_dir in sorted(path for path in RUNS.iterdir() if path.is_dir() and not path.name.startswith("_")):
+    for run_dir in sorted(
+        path
+        for path in RUNS.iterdir()
+        if path.is_dir() and not path.name.startswith("_")
+    ):
         try:
             path = result_file(run_dir.name)
         except RegistryError:
             continue
         value = read_yaml(path)
-        summaries.append({
-            "run_name": value.get("run_name", run_dir.name),
-            "state": value.get("status", {}).get("state"),
-            "final_eval_loss": value.get("metrics", {}).get("final_eval_loss"),
-            "wandb_url": value.get("wandb", {}).get("url"),
-            "result": str(path),
-        })
+        summaries.append(
+            {
+                "run_name": value.get("run_name", run_dir.name),
+                "state": value.get("status", {}).get("state"),
+                "final_eval_loss": value.get("metrics", {}).get("final_eval_loss"),
+                "wandb_url": value.get("wandb", {}).get("url"),
+                "result": str(path),
+            }
+        )
     return summaries
 
 
 def parser() -> argparse.ArgumentParser:
-    root = argparse.ArgumentParser(prog="grootctl")
+    program = os.environ.get("TRAINCTL_PROGRAM", "grootctl")
+    root = argparse.ArgumentParser(prog=program)
     subs = root.add_subparsers(dest="action", required=True)
-    train = subs.add_parser(
-        "train", help="simple dataset-configured training lifecycle"
-    ).add_subparsers(dest="verb", required=True)
-    train_init = train.add_parser("init", help="create a run YAML from current defaults")
+    lifecycle_name = "run" if program == "trainctl" else "train"
+    train_parent = subs.add_parser(
+        lifecycle_name, help="simple dataset-configured training lifecycle"
+    )
+    train_parent.set_defaults(action="train")
+    train = train_parent.add_subparsers(dest="verb", required=True)
+    train_init = train.add_parser(
+        "init", help="create a run YAML from current defaults"
+    )
     train_init.add_argument("name")
     train_init.add_argument("--dataset", required=True)
+    train_init.add_argument(
+        "--policy",
+        default="lerobot-groot",
+        choices=("lerobot-groot", "isaac-groot", "lerobot-act"),
+    )
     train_help = {
         "check": "validate and print the detached launch plan without training",
         "start": "validate and launch training in detached tmux",
@@ -1563,7 +2113,14 @@ def parser() -> argparse.ArgumentParser:
     initialize = config.add_parser("init")
     initialize.add_argument("name")
     initialize.add_argument("--dataset", required=True)
-    run = subs.add_parser("run")
+    initialize.add_argument(
+        "--policy",
+        default="lerobot-groot",
+        choices=("lerobot-groot", "isaac-groot", "lerobot-act"),
+    )
+    foreground_name = "exec" if program == "trainctl" else "run"
+    run = subs.add_parser(foreground_name)
+    run.set_defaults(action="run")
     run.add_argument("reference")
     run.add_argument("--set", action="append", default=[])
     run.add_argument("--dry-run", action="store_true")
@@ -1580,12 +2137,15 @@ def parser() -> argparse.ArgumentParser:
     run_tmux.add_argument("reference")
     run_tmux.add_argument("--set", action="append", default=[])
     run_tmux.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="print the launch and monitoring plan without starting tmux",
     )
     run_tmux.add_argument("--resume", action="store_true")
     run_tmux.add_argument("--run-dir", type=Path)
-    run_tmux.add_argument("--session", help="override the default groot-<run-name> session")
+    run_tmux.add_argument(
+        "--session", help="override the default groot-<run-name> session"
+    )
     queue = subs.add_parser("queue")
     queue.add_argument("reference")
     queue.add_argument("--dry-run", action="store_true")
@@ -1603,14 +2163,16 @@ def parser() -> argparse.ArgumentParser:
         description=(
             "Create a small tracked registration for a Hugging Face LeRobot dataset.\n"
             "Typical use needs only a local name and User/Repo:\n\n"
-            "  grootctl dataset register-hf my_data --repo-id User/Repo\n\n"
+            "  trainctl dataset register-hf my_data --repo-id User/Repo\n\n"
             "The default Hub revision is main and is automatically pinned to its exact\n"
             "commit. Robot revision and task come from the visible project defaults;\n"
             "override them only when the producer handoff says they changed."
         ),
     )
     dataset_register.add_argument("name")
-    dataset_register.add_argument("--repo-id", required=True, help="Hugging Face User/Repo")
+    dataset_register.add_argument(
+        "--repo-id", required=True, help="Hugging Face User/Repo"
+    )
     dataset_register.add_argument(
         "--revision",
         default="main",
@@ -1635,7 +2197,7 @@ def parser() -> argparse.ArgumentParser:
         description=(
             "Create a tracked registration for a local LeRobot directory.\n"
             "Typical use needs only a local name and --source-root:\n\n"
-            "  grootctl dataset register-local my_data --source-root /path/to/dataset"
+            "  trainctl dataset register-local my_data --source-root /path/to/dataset"
         ),
     )
     dataset_register_local.add_argument("name")
@@ -1645,7 +2207,8 @@ def parser() -> argparse.ArgumentParser:
         help="optional free-form source label or commit (default: local)",
     )
     dataset_register_local.add_argument(
-        "--handoff", type=Path,
+        "--handoff",
+        type=Path,
         help="optional provenance note; no naming convention is required",
     )
     dataset_register_local.add_argument(
@@ -1668,7 +2231,9 @@ def parser() -> argparse.ArgumentParser:
     dataset_init.add_argument("--training-repo-id")
     dataset_init.add_argument("--eval-split", type=float, default=0.1)
     dataset_init.add_argument("--state-units", default="radians_and_normalized_gripper")
-    dataset_init.add_argument("--action-units", default="absolute_joint_position_targets")
+    dataset_init.add_argument(
+        "--action-units", default="absolute_joint_position_targets"
+    )
     dataset_init.add_argument(
         "--language-convention", default="English imperative task instruction"
     )
@@ -1678,10 +2243,19 @@ def parser() -> argparse.ArgumentParser:
         "download": "download a Hub source or reuse a registered local directory",
         "preflight": "detect caption-whitespace and episode-index defects",
         "prepare": "create or verify the immutable training derivative",
+        "prepare-isaac": "create or verify the native Isaac-GR00T v2.1 derivative",
         "validate": "check the prepared dataset contract",
         "pipeline": "acquire/recheck, audit captions, prepare, and decode-validate",
     }
-    for verb in ("show", "download", "preflight", "prepare", "validate", "pipeline"):
+    for verb in (
+        "show",
+        "download",
+        "preflight",
+        "prepare",
+        "prepare-isaac",
+        "validate",
+        "pipeline",
+    ):
         child = dataset.add_parser(verb, help=dataset_help[verb])
         child.add_argument("reference")
         if verb == "validate":
@@ -1693,6 +2267,45 @@ def parser() -> argparse.ArgumentParser:
                 default="prepared",
                 help="registration path to inspect (default: prepared)",
             )
+        if verb == "pipeline":
+            child.add_argument(
+                "--for",
+                dest="for_backend",
+                choices=("all", "lerobot", "isaac-groot"),
+                default="all",
+                help="prepare all backends by default",
+            )
+    checkpoint = subs.add_parser(
+        "checkpoint", help="freeze, verify, and deliver complete model packages"
+    ).add_subparsers(dest="verb", required=True)
+    package = checkpoint.add_parser("package", help="freeze a completed run")
+    package.add_argument("reference")
+    package.add_argument("--name")
+    verify = checkpoint.add_parser("verify", help="verify every package checksum")
+    verify.add_argument("reference")
+    transfer = checkpoint.add_parser(
+        "transfer", help="stage, verify, and atomically promote on a robot"
+    )
+    transfer.add_argument("reference")
+    transfer.add_argument(
+        "--target", required=True, help="SSH target, for example robot@f2"
+    )
+    transfer.add_argument(
+        "--robot-workspace",
+        default=str(checkpoints.DEFAULT_ROBOT_WORKSPACE),
+        help=(
+            "Cyclo host workspace alias; defaults to "
+            "/home/robotis/cyclo_intelligence/docker/workspace"
+        ),
+    )
+    transfer.add_argument("--port", type=int, default=22)
+    transfer.add_argument("--identity-file", type=Path)
+    transfer.add_argument("--dry-run", action="store_true")
+    acknowledge = checkpoint.add_parser(
+        "acknowledge", help="record a robot-generated consumer receipt"
+    )
+    acknowledge.add_argument("reference")
+    acknowledge.add_argument("--consumer-receipt", type=Path, required=True)
     result = subs.add_parser("result").add_subparsers(dest="verb", required=True)
     wandb = result.add_parser("import-wandb")
     wandb.add_argument("reference")
@@ -1714,12 +2327,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.action == "train":
             if args.verb == "init":
-                print(init_config(args.name, args.dataset))
+                print(init_config(args.name, args.dataset, args.policy))
                 return 0
             if args.verb == "status":
                 dump(read_yaml(result_file(args.reference, args.attempt)))
                 return 0
-            item = experiment(args.reference, args.set, require_dataset=True, launch=True)
+            item = experiment(
+                args.reference, args.set, require_dataset=True, launch=True
+            )
             report = launch_tmux(
                 item,
                 sets=args.set,
@@ -1732,9 +2347,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.action == "config":
             if args.verb == "init":
-                print(init_config(args.name, args.dataset))
+                print(init_config(args.name, args.dataset, args.policy))
                 return 0
-            item = experiment(args.reference, args.set, require_dataset=not args.no_dataset)
+            item = experiment(
+                args.reference, args.set, require_dataset=not args.no_dataset
+            )
             if args.verb == "resolve":
                 dump(item.data)
             elif args.verb == "validate":
@@ -1743,12 +2360,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(shlex.join(command(item.data)))
             return 0
         if args.action == "run":
-            item = experiment(args.reference, args.set, require_dataset=True, launch=True)
+            item = experiment(
+                args.reference, args.set, require_dataset=True, launch=True
+            )
             result = execute(item, args.dry_run, args.resume, args.run_dir)
             dump(result)
             return 0 if args.dry_run or result["status"]["state"] == "completed" else 1
         if args.action == "run-tmux":
-            item = experiment(args.reference, args.set, require_dataset=True, launch=True)
+            item = experiment(
+                args.reference, args.set, require_dataset=True, launch=True
+            )
             report = launch_tmux(
                 item, args.set, args.resume, args.run_dir, args.session, args.dry_run
             )
@@ -1764,8 +2385,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 0
             if args.verb == "register-hf":
                 path = register_hf_omx_dataset(
-                    args.name, args.repo_id, args.revision, args.robot_revision, args.task,
-                    args.source_root, args.prepared_root, args.training_repo_id,
+                    args.name,
+                    args.repo_id,
+                    args.revision,
+                    args.robot_revision,
+                    args.task,
+                    args.source_root,
+                    args.prepared_root,
+                    args.training_repo_id,
                     args.eval_split,
                 )
                 dump(hf_registration_report(path))
@@ -1785,12 +2412,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                 dump(local_registration_report(path))
                 return 0
             if args.verb == "init":
-                print(init_dataset(
-                    args.name, args.repo_id, args.revision, args.root,
-                    args.robot_revision, args.training_repo_id, args.eval_split,
-                    args.state_units, args.action_units,
-                    args.language_convention, args.embodiment,
-                ))
+                print(
+                    init_dataset(
+                        args.name,
+                        args.repo_id,
+                        args.revision,
+                        args.root,
+                        args.robot_revision,
+                        args.training_repo_id,
+                        args.eval_split,
+                        args.state_units,
+                        args.action_units,
+                        args.language_convention,
+                        args.embodiment,
+                    )
+                )
                 return 0
             data = dataset_spec(args.reference)
             if args.verb == "show":
@@ -1802,10 +2438,37 @@ def main(argv: Sequence[str] | None = None) -> int:
                 dump(preflight_dataset_root(Path(str(data[key]["root"]))))
             elif args.verb == "prepare":
                 print(prepare_dataset(data))
+            elif args.verb == "prepare-isaac":
+                from data_pipeline.isaac_groot import prepare_isaac_dataset
+
+                dump(prepare_isaac_dataset(data))
             elif args.verb == "pipeline":
-                dump(dataset_pipeline(data))
+                dump(dataset_pipeline(data, args.for_backend))
             else:
                 dump(validate_dataset(data, args.decode))
+            return 0
+        if args.action == "checkpoint":
+            if args.verb == "package":
+                dump(checkpoints.package_checkpoint(args.reference, args.name))
+            elif args.verb == "verify":
+                dump(checkpoints.verify_package(args.reference))
+            elif args.verb == "transfer":
+                dump(
+                    checkpoints.transfer_package(
+                        args.reference,
+                        target=args.target,
+                        robot_workspace=args.robot_workspace,
+                        port=args.port,
+                        identity_file=args.identity_file,
+                        dry_run=args.dry_run,
+                    )
+                )
+            else:
+                dump(
+                    checkpoints.acknowledge_package(
+                        args.reference, args.consumer_receipt
+                    )
+                )
             return 0
         if args.action == "result":
             if args.verb == "list":
@@ -1813,11 +2476,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             elif args.verb == "show":
                 dump(read_yaml(result_file(args.reference, args.attempt)))
             else:
-                print(import_wandb(experiment(args.reference, require_dataset=False),
-                                   args.run_id, args.output))
+                print(
+                    import_wandb(
+                        experiment(args.reference, require_dataset=False),
+                        args.run_id,
+                        args.output,
+                    )
+                )
             return 0
         raise RegistryError(f"unknown action: {args.action}")
-    except (RegistryError, subprocess.CalledProcessError, ImportError) as exc:
+    except (
+        RegistryError,
+        checkpoints.CheckpointError,
+        subprocess.CalledProcessError,
+        ImportError,
+    ) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 

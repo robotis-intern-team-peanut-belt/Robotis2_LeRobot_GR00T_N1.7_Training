@@ -1,0 +1,29 @@
+schema_version: 1
+name: recommended_three_policy
+description: >
+  Compare each policy using its reviewed recommended recipe on one canonical
+  dataset contract. This is not a hyperparameter-matched architecture study.
+shared:
+  action_representation: absolute
+  source_format: lerobot_v3
+  cameras: [head, left_wrist, right_wrist]
+  state_action_dim: 16
+  seed: 42
+policies:
+  - backend: lerobot_groot
+    base: ../policies/lerobot_groot_n17.yaml
+    language_conditioned: true
+    horizon: 40
+  - backend: isaac_groot
+    base: ../policies/isaac_groot_n17.yaml
+    language_conditioned: true
+    horizon: 40
+  - backend: lerobot_act
+    base: ../policies/lerobot_act.yaml
+    language_conditioned: false
+    horizon: 100
+limitations:
+  - ACT deliberately ignores the task instruction.
+  - Recommended optimizer, batch, horizon, augmentation, and step budgets differ.
+  - Training loss values are not directly comparable across objectives.
+  - Use the same held-out episodes and robot evaluation protocol for outcome comparison.

@@ -14,7 +14,10 @@ def test_empty_list_flag_is_omitted() -> None:
 
 def test_training_root_relative_reference_is_resolved() -> None:
     expected = registry.ROOT / "configs/base/multi_queue.yaml"
-    assert registry.find("configs/base/multi_queue.yaml", registry.QUEUES) == expected.resolve()
+    assert (
+        registry.find("configs/base/multi_queue.yaml", registry.QUEUES)
+        == expected.resolve()
+    )
 
 
 def test_image_transform_map_is_one_structured_flag() -> None:
@@ -25,19 +28,25 @@ def test_image_transform_map_is_one_structured_flag() -> None:
 
 
 def test_queue_base_inheritance(tmp_path: Path) -> None:
-    write_yaml(tmp_path / "base.yaml", {
-        "schema_version": 1,
-        "continue_on_failure": False,
-        "min_free_disk_gib": 10,
-        "max_attempts": 1,
-        "time_budget_hours": 4,
-    })
-    write_yaml(tmp_path / "queue.yaml", {
-        "_base": "base.yaml",
-        "name": "queue",
-        "description": "test",
-        "runs": [{"config": "run.yaml", "overrides": []}],
-    })
+    write_yaml(
+        tmp_path / "base.yaml",
+        {
+            "schema_version": 1,
+            "continue_on_failure": False,
+            "min_free_disk_gib": 10,
+            "max_attempts": 1,
+            "time_budget_hours": 4,
+        },
+    )
+    write_yaml(
+        tmp_path / "queue.yaml",
+        {
+            "_base": "base.yaml",
+            "name": "queue",
+            "description": "test",
+            "runs": [{"config": "run.yaml", "overrides": []}],
+        },
+    )
     value = registry.layered(tmp_path / "queue.yaml")
     assert value["max_attempts"] == 1
     assert value["runs"][0]["config"] == "run.yaml"
@@ -54,7 +63,7 @@ def test_config_init_creates_small_editable_override(
     monkeypatch.setattr(registry, "DATASETS", registrations)
     created = registry.init_config("new_run", "test_dataset")
     value = yaml.safe_load(created.read_text())
-    assert value["_base"] == "../base/groot_n17.yaml"
+    assert value["_base"] == "../policies/lerobot_groot_n17.yaml"
     assert value["dataset_ref"] == "test_dataset"
     assert "dataset" not in value
     assert "tags" not in value
@@ -102,7 +111,9 @@ class FakeCuda:
 
 def test_gpu_memory_guard_accepts_sufficient_device() -> None:
     data = {"resources": {"memory_guard_gib": 80}}
-    observed = registry.validate_gpu_resources(data, SimpleNamespace(cuda=FakeCuda(89.0)))
+    observed = registry.validate_gpu_resources(
+        data, SimpleNamespace(cuda=FakeCuda(89.0))
+    )
     assert observed == {"device": "test-gpu", "total_memory_gib": 89.0}
 
 
@@ -113,11 +124,20 @@ def test_gpu_memory_guard_rejects_small_device() -> None:
 
 
 def test_run_tmux_parser_matches_run_options() -> None:
-    args = registry.parser().parse_args([
-        "run-tmux", "campaign/run", "--set", "train.steps=10",
-        "--session", "groot-test", "--run-dir", "training/runs/test",
-        "--resume", "--dry-run",
-    ])
+    args = registry.parser().parse_args(
+        [
+            "run-tmux",
+            "campaign/run",
+            "--set",
+            "train.steps=10",
+            "--session",
+            "groot-test",
+            "--run-dir",
+            "training/runs/test",
+            "--resume",
+            "--dry-run",
+        ]
+    )
     assert args.action == "run-tmux"
     assert args.reference == "campaign/run"
     assert args.set == ["train.steps=10"]
@@ -127,18 +147,20 @@ def test_run_tmux_parser_matches_run_options() -> None:
     assert args.dry_run is True
 
 
-def test_tmux_report_prints_monitoring_and_stop_commands(capsys: pytest.CaptureFixture[str]) -> None:
+def test_tmux_report_prints_monitoring_and_stop_commands(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     report = {
         "state": "launched",
         "run_name": "test-run",
-        "tmux_session": "groot-test-run",
+        "tmux_session": "train-test-run",
         "run_dir": "/tmp/test-run",
         "launch_log": "/tmp/test-run.launch.log",
         "preflight": "config, dataset, disk, and GPU checks passed",
         "commands": {
             "trainer": "lerobot-train --dataset.repo_id=local/test",
             "attach": "tmux attach -t =groot-test-run",
-            "status": "training/grootctl result show test-run",
+            "status": "training/trainctl result show test-run",
             "train_log": "tail -f /tmp/test-run/train.log",
             "launch_log": "tail -f /tmp/test-run.launch.log",
             "list_sessions": "tmux list-sessions",
@@ -150,7 +172,7 @@ def test_tmux_report_prints_monitoring_and_stop_commands(capsys: pytest.CaptureF
     assert "continues if this terminal or SSH connection closes" in output
     assert "lerobot-train --dataset.repo_id=local/test" in output
     assert "Ctrl-b, then d" in output
-    assert "training/grootctl result show test-run" in output
+    assert "training/trainctl result show test-run" in output
     assert "STOP TRAINING" in output
 
 
@@ -159,6 +181,7 @@ def test_launch_tmux_starts_detached_session_and_preserves_startup_log(
 ) -> None:
     item = registry.Experiment(tmp_path / "run.yaml", {"name": "test-run"})
     monkeypatch.setattr(registry, "RUNS", tmp_path / "runs")
+    monkeypatch.setattr(registry, "CLI", registry.ROOT / "trainctl")
     monkeypatch.setattr(registry.shutil, "which", lambda name: f"/usr/bin/{name}")
     session_checks = iter([False, True])
     monkeypatch.setattr(registry, "tmux_has_session", lambda name: next(session_checks))
@@ -188,11 +211,11 @@ def test_launch_tmux_starts_detached_session_and_preserves_startup_log(
     )
 
     assert report["state"] == "launched"
-    assert report["tmux_session"] == "groot-test-run"
+    assert report["tmux_session"] == "train-test-run"
     assert report["preflight"].endswith("(test-gpu, 89.0 GiB visible)")
     assert calls[0][:4] == ["tmux", "new-session", "-d", "-s"]
     shell_command = calls[0][-1]
-    assert "training/grootctl" in shell_command
+    assert "training/trainctl" in shell_command
     assert "--set" in shell_command
     assert "train.steps=20" in shell_command
     assert "tee" in shell_command
@@ -225,20 +248,39 @@ def test_dataset_init_creates_minimal_auto_registration(
     registrations = tmp_path / "registrations"
     monkeypatch.setattr(registry, "DATASETS", registrations)
     created = registry.init_dataset(
-        "new_dataset", "org/new_dataset", "a" * 40, root, "f2-test",
-        None, 0.1, "radians_and_normalized_gripper", "joint_position_targets",
-        "English imperative task instruction", "new_embodiment",
+        "new_dataset",
+        "org/new_dataset",
+        "a" * 40,
+        root,
+        "f2-test",
+        None,
+        0.1,
+        "radians_and_normalized_gripper",
+        "joint_position_targets",
+        "English imperative task instruction",
+        "new_embodiment",
     )
     value = yaml.safe_load(created.read_text())
     assert value["prepared"]["root"] == str(root)
     assert value["contract"]["auto_from_metadata"] is True
     assert value["expected"] == {
-        "codebase_version": "v3.0", "total_episodes": 2, "total_frames": 20,
+        "codebase_version": "v3.0",
+        "total_episodes": 2,
+        "total_frames": 20,
     }
     with pytest.raises(registry.RegistryError, match="already exists"):
         registry.init_dataset(
-            "new_dataset", "org/new_dataset", "a" * 40, root, "f2-test",
-            None, 0.1, "radians", "joint_targets", "English imperative", "new_embodiment",
+            "new_dataset",
+            "org/new_dataset",
+            "a" * 40,
+            root,
+            "f2-test",
+            None,
+            0.1,
+            "radians",
+            "joint_targets",
+            "English imperative",
+            "new_embodiment",
         )
 
 
@@ -248,8 +290,13 @@ def test_register_hf_omx_dataset_pins_current_pipeline(
     registrations = tmp_path / "registrations"
     monkeypatch.setattr(registry, "DATASETS", registrations)
     created = registry.register_hf_omx_dataset(
-        "campaign", "User/Repo", "a" * 40, "f2-commit", "Insert all five parts.",
-        tmp_path / "source", tmp_path / "prepared",
+        "campaign",
+        "User/Repo",
+        "a" * 40,
+        "f2-commit",
+        "Insert all five parts.",
+        tmp_path / "source",
+        tmp_path / "prepared",
     )
     value = yaml.safe_load(created.read_text())
     assert value["revision"] == "a" * 40
@@ -265,9 +312,15 @@ def test_register_hf_omx_dataset_pins_current_pipeline(
 
 
 def test_register_hf_parser_needs_only_name_and_repo() -> None:
-    args = registry.parser().parse_args([
-        "dataset", "register-hf", "campaign", "--repo-id", "User/Repo",
-    ])
+    args = registry.parser().parse_args(
+        [
+            "dataset",
+            "register-hf",
+            "campaign",
+            "--repo-id",
+            "User/Repo",
+        ]
+    )
     assert args.verb == "register-hf"
     assert args.revision == "main"
     assert args.robot_revision is None
@@ -283,12 +336,14 @@ def test_register_local_needs_only_name_and_source_root(
     monkeypatch.setattr(registry, "ROOT", tmp_path / "training")
 
     created = registry.register_local_omx_dataset(
-        "campaign_local", source, None, None, tmp_path / "prepared",
+        "campaign_local",
+        source,
+        None,
+        None,
+        tmp_path / "prepared",
     )
     value = yaml.safe_load(created.read_text())
-    marker = yaml.safe_load(
-        (source / ".groot_registry_download.json").read_text()
-    )
+    marker = yaml.safe_load((source / ".groot_registry_download.json").read_text())
     assert value["repo_id"] == "local/campaign_local"
     assert value["revision"] == "local"
     assert value["registration"]["source_kind"] == "direct_local_directory"
@@ -315,8 +370,12 @@ def test_register_local_accepts_optional_free_form_provenance(
     monkeypatch.setattr(registry, "ROOT", tmp_path / "training")
 
     created = registry.register_local_omx_dataset(
-        "campaign_local", source, None, None,
-        source_revision="robot-copy-july", handoff=handoff,
+        "campaign_local",
+        source,
+        None,
+        None,
+        source_revision="robot-copy-july",
+        handoff=handoff,
     )
     value = yaml.safe_load(created.read_text())
     assert value["revision"] == "robot-copy-july"
@@ -324,10 +383,15 @@ def test_register_local_accepts_optional_free_form_provenance(
 
 
 def test_register_local_parser_needs_only_name_and_source_root() -> None:
-    args = registry.parser().parse_args([
-        "dataset", "register-local", "campaign",
-        "--source-root", "/srv/dataset",
-    ])
+    args = registry.parser().parse_args(
+        [
+            "dataset",
+            "register-local",
+            "campaign",
+            "--source-root",
+            "/srv/dataset",
+        ]
+    )
     assert args.verb == "register-local"
     assert args.source_revision is None
     assert args.handoff is None
@@ -339,20 +403,28 @@ def test_register_hf_uses_visible_project_defaults(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     profile = tmp_path / "f2_defaults.yaml"
-    write_yaml(profile, {
-        "schema_version": 1,
-        "name": "f2_omx_insert",
-        "robot_revision": "f2-profile-commit",
-        "task": "Insert all five parts.",
-        "evidence": "/handoffs/example.md",
-    })
+    write_yaml(
+        profile,
+        {
+            "schema_version": 1,
+            "name": "f2_omx_insert",
+            "robot_revision": "f2-profile-commit",
+            "task": "Insert all five parts.",
+            "evidence": "/handoffs/example.md",
+        },
+    )
     registrations = tmp_path / "registrations"
     monkeypatch.setattr(registry, "F2_OMX_PROFILE", profile)
     monkeypatch.setattr(registry, "DATASETS", registrations)
 
     created = registry.register_hf_omx_dataset(
-        "campaign", "User/Repo", "a" * 40, None, None,
-        tmp_path / "source", tmp_path / "prepared",
+        "campaign",
+        "User/Repo",
+        "a" * 40,
+        None,
+        None,
+        tmp_path / "source",
+        tmp_path / "prepared",
     )
     value = yaml.safe_load(created.read_text())
     assert value["contract"]["robot_revision"] == "f2-profile-commit"
@@ -379,7 +451,9 @@ def test_download_registration_upgrades_to_payload_manifest(tmp_path: Path) -> N
     )
     manifest = tmp_path / "manifest.txt"
     value = {
-        "name": "campaign", "repo_id": "User/Repo", "revision": "a" * 40,
+        "name": "campaign",
+        "repo_id": "User/Repo",
+        "revision": "a" * 40,
         "download": {"root": str(source), "manifest": str(manifest)},
     }
     assert registry.download_dataset(value) == source
@@ -431,12 +505,24 @@ def test_dataset_pipeline_parser() -> None:
 
 
 def test_simple_train_lifecycle_parser() -> None:
-    initialized = registry.parser().parse_args([
-        "train", "init", "baseline", "--dataset", "campaign",
-    ])
-    checked = registry.parser().parse_args([
-        "train", "check", "baseline", "--set", "train.batch_size=16",
-    ])
+    initialized = registry.parser().parse_args(
+        [
+            "train",
+            "init",
+            "baseline",
+            "--dataset",
+            "campaign",
+        ]
+    )
+    checked = registry.parser().parse_args(
+        [
+            "train",
+            "check",
+            "baseline",
+            "--set",
+            "train.batch_size=16",
+        ]
+    )
     started = registry.parser().parse_args(["train", "start", "baseline"])
     status = registry.parser().parse_args(["train", "status", "baseline"])
     assert initialized.dataset == "campaign"
@@ -447,10 +533,12 @@ def test_simple_train_lifecycle_parser() -> None:
 
 
 def test_final_training_metrics_reads_last_logged_step() -> None:
-    text = "\n".join([
-        "step:10 smpl:40 loss:1.511 grdn:2.573 smp/s:3 mem_gb:35.94",
-        "step:20 smpl:80 loss:1.293 grdn:1.519 smp/s:13 mem_gb:35.94",
-    ])
+    text = "\n".join(
+        [
+            "step:10 smpl:40 loss:1.511 grdn:2.573 smp/s:3 mem_gb:35.94",
+            "step:20 smpl:80 loss:1.293 grdn:1.519 smp/s:13 mem_gb:35.94",
+        ]
+    )
     assert registry.final_training_metrics(text) == {
         "step": 20,
         "loss": 1.293,
@@ -465,7 +553,9 @@ def test_dataset_pipeline_runs_fail_closed_stages_in_order(
 ) -> None:
     calls = []
     monkeypatch.setattr(
-        registry, "download_dataset", lambda data: calls.append("download") or tmp_path / "source"
+        registry,
+        "download_dataset",
+        lambda data: calls.append("download") or tmp_path / "source",
     )
     monkeypatch.setattr(
         registry,
@@ -473,13 +563,19 @@ def test_dataset_pipeline_runs_fail_closed_stages_in_order(
         lambda root: calls.append(("preflight", root.name)) or {"ready": True},
     )
     monkeypatch.setattr(
-        registry, "audit_dataset_captions", lambda data: calls.append("audit") or {"ready": True}
+        registry,
+        "audit_dataset_captions",
+        lambda data: calls.append("audit") or {"ready": True},
     )
     monkeypatch.setattr(
-        registry, "prepare_dataset", lambda data: calls.append("prepare") or tmp_path / "prepared"
+        registry,
+        "prepare_dataset",
+        lambda data: calls.append("prepare") or tmp_path / "prepared",
     )
     monkeypatch.setattr(
-        registry, "validate_dataset", lambda data, decode: calls.append(("validate", decode)) or {"ok": True}
+        registry,
+        "validate_dataset",
+        lambda data, decode: calls.append(("validate", decode)) or {"ok": True},
     )
     report = registry.dataset_pipeline({"name": "campaign", "revision": "a" * 40})
     assert calls == [
@@ -498,3 +594,24 @@ def test_dataset_preflight_parser_selects_source_stage() -> None:
     )
     assert args.verb == "preflight"
     assert args.stage == "source"
+
+
+def test_final_training_metrics_reads_native_summary() -> None:
+    text = (
+        "{'train_runtime': 37.7, 'train_samples_per_second': 0.026, "
+        "'train_steps_per_second': 0.026, 'train_loss': 1.8579963445663452}"
+    )
+    assert registry.final_training_metrics(text) == {
+        "step": None,
+        "loss": 1.8579963445663452,
+        "gradient_norm": None,
+        "samples_per_second": 0.026,
+        "cuda_memory_gib": None,
+    }
+
+
+def test_checkpoint_transfer_parser_defaults_to_cyclo_home_workspace() -> None:
+    args = registry.parser().parse_args(
+        ["checkpoint", "transfer", "candidate", "--target", "robotis@f2"]
+    )
+    assert args.robot_workspace == ("/home/robotis/cyclo_intelligence/docker/workspace")

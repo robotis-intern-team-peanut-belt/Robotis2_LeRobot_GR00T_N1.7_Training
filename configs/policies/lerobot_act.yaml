@@ -1,0 +1,90 @@
+# Recommended LeRobot ACT baseline for the same F2 visual/proprioceptive data.
+schema_version: 1
+backend: lerobot_act
+name: replace-me
+description: Native-camera LeRobot ACT visual/proprioceptive baseline.
+hypothesis: Override in each run with a falsifiable experiment hypothesis.
+tags: [act, visual-proprioceptive]
+
+dataset:
+  # ACT consumes images and proprioception; task text remains in the dataset but
+  # is deliberately not an ACT model input.
+  image_transforms:
+    enable: false
+
+policy:
+  type: act
+  device: cuda
+  # Keep pinned LeRobot's recommended ACT architecture and optimizer defaults.
+  n_obs_steps: 1
+  chunk_size: 100
+  n_action_steps: 100
+  vision_backbone: resnet18
+  pretrained_backbone_weights: ResNet18_Weights.IMAGENET1K_V1
+  replace_final_stride_with_dilation: false
+  pre_norm: false
+  dim_model: 512
+  n_heads: 8
+  dim_feedforward: 3200
+  feedforward_activation: relu
+  n_encoder_layers: 4
+  n_decoder_layers: 1
+  use_vae: true
+  latent_dim: 32
+  n_vae_encoder_layers: 4
+  temporal_ensemble_coeff: null
+  dropout: 0.1
+  kl_weight: 10.0
+  optimizer_lr: 1.0e-5
+  optimizer_weight_decay: 1.0e-4
+  optimizer_lr_backbone: 1.0e-5
+  push_to_hub: false
+  repo_id: local/${name}
+
+train:
+  seed: 42
+  batch_size: 8
+  num_workers: 4
+  prefetch_factor: 4
+  persistent_workers: true
+  steps: 100000
+  save_checkpoint: true
+  save_freq: 20000
+  use_policy_training_preset: true
+  env_eval_freq: 0
+  eval_steps: 5000
+  max_eval_samples: 1000
+  log_freq: 200
+
+optimizer:
+  type: adamw
+  lr: 1.0e-5
+  weight_decay: 1.0e-4
+scheduler: {}
+
+tracking:
+  backend: wandb
+  enable: true
+  entity: robotis-intern-team-peanut-belt
+  project: act-omx-insert
+  mode: online
+  disable_artifact: true
+  notes: ${name}; registry-managed LeRobot ACT run.
+
+resources:
+  min_free_disk_gib: 20
+  timeout_hours: 24
+  expected_gpu: NVIDIA B200 MIG 4g.90gb
+  memory_guard_gib: 4
+artifacts:
+  required_checkpoint_files:
+    - config.json
+    - model.safetensors
+    - policy_preprocessor.json
+    - policy_postprocessor.json
+    - train_config.json
+annotation:
+  owner: intern-team
+  notes: Override with the experiment rationale, decision criteria, and caveats.
+  comparison_role: visual_proprioceptive_no_language
+  evaluation_required: [offline, shadow, guarded_hardware]
