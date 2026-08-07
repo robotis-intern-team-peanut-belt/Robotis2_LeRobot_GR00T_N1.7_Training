@@ -1,0 +1,15 @@
+_base: ../policies/lerobot_act.yaml
+name: 20260806_omx-insert-f2-combined-v3_act_nolang_abs16_h100a100_b8_s100k_seed42_v1
+description: Matched no-language ACT run on the 256-episode OMX Insert F2 combined
+  v3 dataset.
+hypothesis: The 256-episode combined v3 dataset improves visual-proprioceptive insertion
+  performance while retaining the prior ACT recipe.
+dataset_ref: OMX_Insert_F2_combined_v3_mainlang_servo_first_v1
+tracking:
+  mode: offline
+  notes: Combined v3; no language input; absolute16/H100/A100/B8/100k/seed42; recipe
+    matched to the prior ACT run.
+annotation:
+  owner: intern-team
+  notes: ACT ignores task text. It starts only after the combined-v3 Isaac 40k run
+    completes successfully, preventing GPU contention.

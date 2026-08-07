@@ -1,0 +1,11 @@
+_base: ../policies/lerobot_act.yaml
+name: 20260805_t000378_700013_act_nolang_abs16_h100a100_b8_s100k_seed42_leftfix_v1
+description: Matched no-language ACT run on the corrected 000378+700013 merge.
+hypothesis: With yesterday's ACT recipe fixed, the larger corrected demonstration set improves visual-proprioceptive insertion performance.
+dataset_ref: Task_000378_700013_left_gripper_fix_v1_merged_mainlang_servo_first_v1
+tracking:
+  mode: offline
+  notes: Corrected merged-data comparison; no language input; absolute16/H100/A100/B8/100k/seed42; recipe matched to 20260804 Task700013.
+annotation:
+  owner: intern-team
+  notes: Compare only against yesterday's ACT run; do not interpret caption differences as ACT inputs.

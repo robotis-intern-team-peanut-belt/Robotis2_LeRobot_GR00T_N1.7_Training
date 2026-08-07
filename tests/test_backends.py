@@ -101,6 +101,34 @@ def test_native_dataset_defaults_and_command_are_absolute(
         registry.validate(invalid_seed, Path("test.yaml"), False, False)
 
 
+def test_native_wandb_mode_and_team_entity_are_forwarded(tmp_path: Path) -> None:
+    value = resolved_policy("isaac_groot_n17.yaml", dataset(tmp_path))
+    value["dataset"]["modality_config_path"] = str(
+        tmp_path / "f2_arms16_absolute_h40.py"
+    )
+    value = registry.merge(
+        value,
+        {
+            "tracking": {
+                "backend": "wandb",
+                "enable": True,
+                "entity": "robotis-intern-team-peanut-belt",
+                "project": "isaac-groot-omx-insert",
+                "mode": "online",
+            }
+        },
+    )
+    command = registry.command(value, tmp_path / "output")
+    assert command[:6] == [
+        str(registry.ROOT / "scripts/run_backend.sh"),
+        "isaac_groot",
+        "env",
+        "WANDB_MODE=online",
+        "WANDB_ENTITY=robotis-intern-team-peanut-belt",
+        "python",
+    ]
+
+
 @pytest.mark.parametrize(
     ("policy", "base"),
     [

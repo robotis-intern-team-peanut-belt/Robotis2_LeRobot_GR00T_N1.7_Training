@@ -610,8 +610,7 @@ def test_final_training_metrics_reads_native_summary() -> None:
     }
 
 
-def test_checkpoint_transfer_parser_defaults_to_cyclo_home_workspace() -> None:
-    args = registry.parser().parse_args(
-        ["checkpoint", "transfer", "candidate", "--target", "robotis@f2"]
-    )
-    assert args.robot_workspace == ("/home/robotis/cyclo_intelligence/docker/workspace")
+@pytest.mark.parametrize("verb", ["transfer", "acknowledge"])
+def test_checkpoint_push_commands_are_not_exposed(verb: str) -> None:
+    with pytest.raises(SystemExit):
+        registry.parser().parse_args(["checkpoint", verb])

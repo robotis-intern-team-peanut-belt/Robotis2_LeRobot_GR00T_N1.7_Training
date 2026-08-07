@@ -1,0 +1,120 @@
+schema_version: 1
+name: Task_700013_short_full_v1
+repo_id: local/Task_700013_short_full_v1
+revision: parent-manifest-1340c700a999_mainlang-servo-first-v1:short_full_v1
+registration:
+  source_kind: direct_local_directory
+  contract_profile: ${workspace}/training/configs/contracts/f2_omx_insert.yaml
+  robot_revision_source: project_default
+  task_source: command_line
+  source_revision_source: command_line
+  language_variant: true
+  language_mode: full_episode
+  language_variant_receipt: /NHNHOME/WORKSPACE/26motir001_D/intern_team/training/artifacts/datasets/Task_700013_short_full_v1_source_v30/LANGUAGE_VARIANT_RECEIPT.json
+download:
+  root: /NHNHOME/WORKSPACE/26motir001_D/intern_team/training/artifacts/datasets/Task_700013_short_full_v1_source_v30
+prepared:
+  root: /NHNHOME/WORKSPACE/26motir001_D/intern_team/training/artifacts/datasets/Task_700013_short_full_v1_prepared_v30
+  immutable: true
+validation:
+  caption_audit:
+    enabled: true
+    profile: omx_insert
+    language_mode: full_episode
+    expected_subtasks_per_episode: 5
+    expected_task_vocabulary: &id001
+    - servo, electronic, cable, OMX-F3, OMX-Base
+    output: /NHNHOME/WORKSPACE/26motir001_D/intern_team/training/artifacts/reports/Task_700013_short_full_v1_caption_audit.json
+    expected_overall_task: servo, electronic, cable, OMX-F3, OMX-Base
+training:
+  repo_id: local/Task_700013_short_full_v1_prepared_v30
+  video_backend: torchcodec
+  eval_split: 0.1
+expected:
+  codebase_version: v3.0
+  total_episodes: 100
+  total_frames: 129654
+adapters:
+  isaac_groot:
+    root: /NHNHOME/WORKSPACE/26motir001_D/intern_team/training/artifacts/datasets/Task_700013_short_full_v1_isaac_v21
+    modality_config_path: ${training_root}/configs/modalities/f2_arms16_absolute_h40.py
+    modality_json_path: ${training_root}/configs/modalities/f2_arms16_modality.json
+    embodiment_tag: NEW_EMBODIMENT
+contract:
+  robot_revision: f2_ai_worker_f8a970bb98becefe4e69fd52e3af5b7ae81b273f
+  embodiment: new_embodiment
+  fps: 15
+  units:
+    state: radians_and_normalized_gripper
+    action: absolute_joint_position_targets
+  language:
+    convention: One full-episode task via task_index; five ordered subtasks are annotations
+      only
+    instruction: servo, electronic, cable, OMX-F3, OMX-Base
+    mode: full_episode
+    task_vocabulary: *id001
+  source_camera_transform:
+    head: native 640x480 at 15 fps; identity
+    left_wrist: native 640x480 at 15 fps; identity
+    right_wrist: native 640x480 at 15 fps; identity
+  video_encoding:
+    geometry: identity
+    codec: h264
+    gop_size: 15
+    crf: 18
+    preset: medium
+  cameras:
+  - key: observation.images.rgb.cam_head
+    shape:
+    - 3
+    - 480
+    - 640
+  - key: observation.images.rgb.cam_left_wrist
+    shape:
+    - 3
+    - 480
+    - 640
+  - key: observation.images.rgb.cam_right_wrist
+    shape:
+    - 3
+    - 480
+    - 640
+  state:
+    dim: 16
+    names:
+    - arm_l_joint1
+    - arm_l_joint2
+    - arm_l_joint3
+    - arm_l_joint4
+    - arm_l_joint5
+    - arm_l_joint6
+    - arm_l_joint7
+    - gripper_l_joint1
+    - arm_r_joint1
+    - arm_r_joint2
+    - arm_r_joint3
+    - arm_r_joint4
+    - arm_r_joint5
+    - arm_r_joint6
+    - arm_r_joint7
+    - gripper_r_joint1
+  action:
+    dim: 16
+    names:
+    - arm_l_joint1
+    - arm_l_joint2
+    - arm_l_joint3
+    - arm_l_joint4
+    - arm_l_joint5
+    - arm_l_joint6
+    - arm_l_joint7
+    - gripper_l_joint1
+    - arm_r_joint1
+    - arm_r_joint2
+    - arm_r_joint3
+    - arm_r_joint4
+    - arm_r_joint5
+    - arm_r_joint6
+    - arm_r_joint7
+    - gripper_r_joint1
+source_manifest_sha256: ad0d95ceebda58672a39faf0e00abbea8b00d3cd26ff05edbe8af5a135cf6c59

@@ -1,0 +1,11 @@
+_base: ../policies/lerobot_act.yaml
+name: 20260804_t700013_act_nolang_abs16_h100a100_b8_s100k_seed42_v1
+description: Canonical Task 700013 visual-proprioceptive ACT baseline; task text is intentionally unused.
+hypothesis: Three native RGB streams and absolute 16-D proprioception are sufficient to learn the five-insertion sequence without language input.
+dataset_ref: Task_700013_mainlang_servo_first_v1
+tracking:
+  mode: offline
+  notes: Task700013 canonical visual-proprioceptive ACT baseline; no language input; absolute16/H100/A100/B8/100k/seed42.
+annotation:
+  owner: intern-team
+  notes: Do not duplicate ACT runs for language variants; run a short throughput calibration before committing to the 100k budget.

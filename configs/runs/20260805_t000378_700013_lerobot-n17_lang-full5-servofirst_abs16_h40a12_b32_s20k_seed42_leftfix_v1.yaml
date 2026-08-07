@@ -1,0 +1,13 @@
+_base: ../policies/lerobot_groot_n17.yaml
+name: 20260805_t000378_700013_lerobot-n17_lang-full5-servofirst_abs16_h40a12_b32_s20k_seed42_leftfix_v1
+description: Matched LeRobot GR00T N1.7 full-prompt run on the corrected 000378+700013 merge.
+hypothesis: With yesterday's successful attempt-2 recipe fixed, the corrected 159-episode merge improves held-out and inference outcomes.
+dataset_ref: Task_000378_700013_left_gripper_fix_v1_merged_mainlang_servo_first_v1
+policy:
+  base_model_path: nvidia/GR00T-N1.7-3B
+tracking:
+  mode: offline
+  notes: Corrected merged-data comparison; absolute16/H40/A12/B32/20k/seed42; use yesterday's GPU-compatible non-albumentations processor and cached snapshot 2fc962b973bccdd5d8ce4f67cc63b264d6886495.
+annotation:
+  owner: intern-team
+  notes: Compare against yesterday's successful LeRobot attempt 2, never the stopped CPU-preprocessing attempt 1.

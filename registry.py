@@ -1477,9 +1477,21 @@ def audit_dataset_captions(data: Mapping[str, Any]) -> dict[str, Any] | None:
         return None
     if settings.get("profile") != "omx_insert":
         raise RegistryError("unsupported caption audit profile")
+    language_mode = str(settings.get("language_mode", "full_episode"))
+    if language_mode not in {"full_episode", "per_subtask", "mapped_subtask"}:
+        raise RegistryError(f"unsupported caption language_mode: {language_mode}")
     expected_task = settings.get("expected_overall_task")
-    if not expected_task:
-        raise RegistryError("caption audit requires expected_overall_task")
+    if language_mode == "full_episode" and not expected_task:
+        raise RegistryError("full_episode caption audit requires expected_overall_task")
+    expected_vocabulary = settings.get("expected_task_vocabulary")
+    if expected_vocabulary is not None and (
+        not isinstance(expected_vocabulary, list)
+        or not expected_vocabulary
+        or any(not isinstance(item, str) or not item.strip() for item in expected_vocabulary)
+    ):
+        raise RegistryError("expected_task_vocabulary must be a nonempty string list")
+    if language_mode == "mapped_subtask" and expected_vocabulary is None:
+        raise RegistryError("mapped_subtask caption audit requires expected_task_vocabulary")
     try:
         from data_pipeline.audit_omx_insert_captions import CaptionAuditError, audit
     except ImportError as exc:
@@ -1489,8 +1501,9 @@ def audit_dataset_captions(data: Mapping[str, Any]) -> dict[str, Any] | None:
             Path(str(data["download"]["root"])),
             expected_episodes=settings.get("expected_episodes"),
             expected_subtasks=int(settings.get("expected_subtasks_per_episode", 5)),
-            language_mode=str(settings.get("language_mode", "full_episode")),
-            expected_overall_task=str(expected_task),
+            language_mode=language_mode,
+            expected_overall_task=(str(expected_task) if expected_task is not None else None),
+            expected_task_vocabulary=expected_vocabulary,
         )
     except CaptionAuditError as exc:
         raise RegistryError(f"caption audit failed: {exc}") from exc
@@ -1505,6 +1518,7 @@ def audit_dataset_captions(data: Mapping[str, Any]) -> dict[str, Any] | None:
     atomic_json(output, report)
     return {
         "output": str(output),
+        "language_mode": report["language_mode"],
         "language_contract_ready": report["language_contract_ready"],
     }
 
@@ -2276,36 +2290,13 @@ def parser() -> argparse.ArgumentParser:
                 help="prepare all backends by default",
             )
     checkpoint = subs.add_parser(
-        "checkpoint", help="freeze, verify, and deliver complete model packages"
+        "checkpoint", help="freeze and verify complete model packages"
     ).add_subparsers(dest="verb", required=True)
     package = checkpoint.add_parser("package", help="freeze a completed run")
     package.add_argument("reference")
     package.add_argument("--name")
     verify = checkpoint.add_parser("verify", help="verify every package checksum")
     verify.add_argument("reference")
-    transfer = checkpoint.add_parser(
-        "transfer", help="stage, verify, and atomically promote on a robot"
-    )
-    transfer.add_argument("reference")
-    transfer.add_argument(
-        "--target", required=True, help="SSH target, for example robot@f2"
-    )
-    transfer.add_argument(
-        "--robot-workspace",
-        default=str(checkpoints.DEFAULT_ROBOT_WORKSPACE),
-        help=(
-            "Cyclo host workspace alias; defaults to "
-            "/home/robotis/cyclo_intelligence/docker/workspace"
-        ),
-    )
-    transfer.add_argument("--port", type=int, default=22)
-    transfer.add_argument("--identity-file", type=Path)
-    transfer.add_argument("--dry-run", action="store_true")
-    acknowledge = checkpoint.add_parser(
-        "acknowledge", help="record a robot-generated consumer receipt"
-    )
-    acknowledge.add_argument("reference")
-    acknowledge.add_argument("--consumer-receipt", type=Path, required=True)
     result = subs.add_parser("result").add_subparsers(dest="verb", required=True)
     wandb = result.add_parser("import-wandb")
     wandb.add_argument("reference")
@@ -2452,23 +2443,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 dump(checkpoints.package_checkpoint(args.reference, args.name))
             elif args.verb == "verify":
                 dump(checkpoints.verify_package(args.reference))
-            elif args.verb == "transfer":
-                dump(
-                    checkpoints.transfer_package(
-                        args.reference,
-                        target=args.target,
-                        robot_workspace=args.robot_workspace,
-                        port=args.port,
-                        identity_file=args.identity_file,
-                        dry_run=args.dry_run,
-                    )
-                )
             else:
-                dump(
-                    checkpoints.acknowledge_package(
-                        args.reference, args.consumer_receipt
-                    )
-                )
+                raise RegistryError(f"unknown checkpoint action: {args.verb}")
             return 0
         if args.action == "result":
             if args.verb == "list":

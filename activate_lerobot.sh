@@ -15,6 +15,8 @@ LEROBOT_EXPECTED_VENV="${LEROBOT_REPO_DIR}/.venv"
 LEROBOT_CONDA_ENV="${LEROBOT_CONDA_ENV:-groot-runtime}"
 LEROBOT_CONDA_BASE="${GROOT_RUNTIME_CONDA_BASE:-$(dirname -- "${LEROBOT_WORKSPACE}")/FastWAM_Workspace/miniforge3}"
 
+source "${LEROBOT_TRAINING_ROOT}/load_wandb_env.sh" || return 1
+
 if [[ -n "${VIRTUAL_ENV:-}" && "${VIRTUAL_ENV}" != "${LEROBOT_EXPECTED_VENV}" ]]; then
     echo "ERROR: another virtual environment is active: ${VIRTUAL_ENV}"
     echo "Open a fresh shell before switching ML repositories."
@@ -51,6 +53,7 @@ echo "LeRobot environment ready."
 echo "  Repository: ${LEROBOT_REPO_DIR}"
 echo "  Python:     $(command -v python)"
 echo "  FFmpeg:     ${CONDA_PREFIX}/bin/ffmpeg"
+echo "  W&B key:    $([[ -n "${WANDB_API_KEY:-}" ]] && echo 'loaded locally' || echo 'not configured')"
 
 unset LEROBOT_TRAINING_ROOT LEROBOT_WORKSPACE LEROBOT_REPO_DIR LEROBOT_EXPECTED_VENV
 unset LEROBOT_CONDA_BASE LEROBOT_FFMPEG_LIB_DIR

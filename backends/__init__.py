@@ -141,6 +141,15 @@ def _isaac_command(data: Mapping[str, Any], out: Path) -> list[str]:
     result = [
         str(RUN_BACKEND),
         "isaac_groot",
+        *(
+            [
+                "env",
+                f"WANDB_MODE={tracking.get('mode', 'online')}",
+                f"WANDB_ENTITY={tracking['entity']}",
+            ]
+            if tracking.get("backend") == "wandb"
+            else []
+        ),
         "python",
         str(ISAAC_GROOT / "gr00t/experiment/launch_finetune.py"),
         "--base-model-path",

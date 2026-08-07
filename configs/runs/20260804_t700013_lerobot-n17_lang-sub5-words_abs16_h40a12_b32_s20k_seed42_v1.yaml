@@ -1,0 +1,12 @@
+_base: ../policies/lerobot_groot_n17.yaml
+name: 20260804_t700013_lerobot-n17_lang-sub5-words_abs16_h40a12_b32_s20k_seed42_v1
+description: Five frame-aligned object tokens for the LeRobot GR00T language ablation.
+hypothesis: After excluding H40 boundary crossings, object identity alone retains useful conditioning but underperforms rich subtask instructions.
+dataset_ref: Task_700013_subtask_words_v1
+policy:
+  base_model_path: /home/k_humanoid_3/.cache/huggingface/hub/models--nvidia--GR00T-N1.7-3B/snapshots/2fc962b973bccdd5d8ce4f67cc63b264d6886495
+tracking:
+  notes: Task700013 language-only comparison; five object-token prompts; absolute16/H40/A12/B32/20k/seed42 fixed.
+annotation:
+  owner: intern-team
+  notes: DO NOT QUEUE until a boundary-safe sampler excludes the recorded 15,600 cross-subtask H40 starts and the same sampling mask is applied to controls.

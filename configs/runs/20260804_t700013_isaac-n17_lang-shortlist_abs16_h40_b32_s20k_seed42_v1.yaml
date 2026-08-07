@@ -1,0 +1,12 @@
+_base: ../policies/isaac_groot_n17.yaml
+name: 20260804_t700013_isaac-n17_lang-shortlist_abs16_h40_b32_s20k_seed42_v1
+description: One short five-object list on every frame for the native Isaac GR00T language ablation.
+hypothesis: Removing action syntax while retaining all five object names does not materially degrade held-out performance relative to the full servo-first instruction.
+dataset_ref: Task_700013_short_full_v1
+policy:
+  base_model_path: /home/k_humanoid_3/.cache/huggingface/hub/models--nvidia--GR00T-N1.7-3B/snapshots/2fc962b973bccdd5d8ce4f67cc63b264d6886495
+tracking:
+  notes: Task700013 language-only comparison; short full-episode object list; absolute16/H40/B32/20k/seed42 fixed.
+annotation:
+  owner: intern-team
+  notes: Compare to the Isaac servo-first baseline with the same split, seed, model snapshot, optimizer, augmentation, and budget.

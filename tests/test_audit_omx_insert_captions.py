@@ -24,7 +24,14 @@ def fixture(root: Path, language_mode: str) -> None:
     ).to_parquet(root / "meta/subtasks.parquet")
     pq.write_table(
         pa.Table.from_pylist(
-            [{"episode_index": 0, "length": 10, "tasks": [tasks[0]], "subtask_instructions": captions}]
+            [
+                {
+                    "episode_index": 0,
+                    "length": 10,
+                    "tasks": tasks if language_mode == "per_subtask" else [tasks[0]],
+                    "subtask_instructions": captions,
+                }
+            ]
         ),
         root / "meta/episodes/chunk-000/file-000.parquet",
     )
@@ -94,4 +101,8 @@ def test_annotation_range_mismatch_is_rejected(tmp_path: Path) -> None:
     value["sub_task_annotation"][1]["frame_duration"] = [3, 4]
     path.write_text(json.dumps(value))
     with pytest.raises(CaptionAuditError, match="annotation frame range mismatch"):
-        audit(tmp_path, expected_episodes=1)
+        audit(
+            tmp_path,
+            expected_episodes=1,
+            expected_overall_task="overall task",
+        )

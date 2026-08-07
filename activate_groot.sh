@@ -15,6 +15,8 @@ GROOT_EXPECTED_VENV="${GROOT_REPO_DIR}/.venv"
 GROOT_CONDA_ENV="${GROOT_CONDA_ENV:-groot-runtime}"
 GROOT_CONDA_BASE="${GROOT_RUNTIME_CONDA_BASE:-$(dirname -- "${GROOT_WORKSPACE}")/FastWAM_Workspace/miniforge3}"
 
+source "${GROOT_TRAINING_ROOT}/load_wandb_env.sh" || return 1
+
 if [[ -n "${VIRTUAL_ENV:-}" && "${VIRTUAL_ENV}" != "${GROOT_EXPECTED_VENV}" ]]; then
     echo "ERROR: another virtual environment is active: ${VIRTUAL_ENV}"
     echo "Open a fresh shell before switching ML repositories."
@@ -51,6 +53,7 @@ echo "Isaac-GR00T environment ready."
 echo "  Repository: ${GROOT_REPO_DIR}"
 echo "  Python:     $(command -v python)"
 echo "  FFmpeg:     ${CONDA_PREFIX}/bin/ffmpeg"
+echo "  W&B key:    $([[ -n "${WANDB_API_KEY:-}" ]] && echo 'loaded locally' || echo 'not configured')"
 
 unset GROOT_TRAINING_ROOT GROOT_WORKSPACE GROOT_REPO_DIR GROOT_EXPECTED_VENV
 unset GROOT_CONDA_BASE GROOT_FFMPEG_LIB_DIR

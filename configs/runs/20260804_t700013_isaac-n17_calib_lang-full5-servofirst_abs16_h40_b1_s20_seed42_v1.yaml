@@ -1,0 +1,28 @@
+_base: ../policies/isaac_groot_n17.yaml
+name: 20260804_t700013_isaac-n17_calib_lang-full5-servofirst_abs16_h40_b1_s20_seed42_v1
+description: Twenty-step native Isaac GR00T loader, memory, and throughput calibration for Task 700013.
+hypothesis: Batch one completes twenty finite-loss steps without OOM and yields enough timing and memory evidence to select the full-run batch size.
+dataset_ref: Task_700013_mainlang_servo_first_v1
+policy:
+  base_model_path: /home/k_humanoid_3/.cache/huggingface/hub/models--nvidia--GR00T-N1.7-3B/snapshots/2fc962b973bccdd5d8ce4f67cc63b264d6886495
+train:
+  batch_size: 1
+  num_workers: 0
+  steps: 20
+  save_freq: 100
+  save_total_limit: 1
+  save_only_model: true
+  log_freq: 1
+tracking:
+  backend: none
+  enable: false
+  entity: null
+  project: null
+  mode: disabled
+  notes: Offline calibration; no W&B run is created.
+resources:
+  min_free_disk_gib: 100
+  timeout_hours: 1
+annotation:
+  owner: intern-team
+  notes: Calibration only, not a checkpoint candidate; record step time and CUDA allocated/reserved memory before selecting the full batch size.

@@ -3,7 +3,9 @@ set -euo pipefail
 
 TRAINING_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-
 export TRAINCTL_PROGRAM="trainctl"
 export TRAINCTL_EXECUTABLE="${TRAINING_ROOT}/trainctl"
-exec python3 "${TRAINING_ROOT}/registry.py" "$@"
+# Detached tmux sessions start with the host PATH, where /usr/bin/python3 lacks PyYAML.
+# Each trainer is still launched through run_backend.sh into its pinned environment.
+TRAINCTL_PYTHON="${TRAINCTL_PYTHON:-${TRAINING_ROOT}/../Isaac-GR00T/.venv/bin/python}"
+exec "${TRAINCTL_PYTHON}" "${TRAINING_ROOT}/registry.py" "$@"

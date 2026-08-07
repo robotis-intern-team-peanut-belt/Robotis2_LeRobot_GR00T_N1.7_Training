@@ -38,6 +38,21 @@ training/
 Workspace root에서는 `training/trainctl ...`, 이 directory에서는
 `./trainctl ...`를 실행한다.
 
+## Workspace-local W&B 인증
+
+API key를 `training/.env.secret`에 붙여 넣는다.
+
+```bash
+WANDB_API_KEY="paste-your-key-here"
+```
+
+이 파일은 Git에서 제외되고 local workspace에만 있으며,
+`training/activate_groot.sh`와 `training/activate_lerobot.sh`가 모두 읽는다.
+`trainctl`로 시작한 학습도 이 activation script를 거친다. 따라서 user 전체의
+`~/.netrc`에 `wandb login` 정보를 저장하지 않는다. 각 run은 resolved
+`tracking.mode`를 계속 따르므로, 명시적으로 offline인 run은 key가 있어도
+자동으로 online으로 바뀌지 않는다.
+
 ## 1. Canonical LeRobot v3 dataset 등록
 
 Server에 이미 upload한 dataset:
@@ -118,49 +133,31 @@ training/trainctl run status <run>
 출력한다. Command 검사에는 `training/trainctl exec <run> --dry-run`, 매우 짧은
 foreground debug에만 `training/trainctl exec <run>`를 사용한다.
 
-## 4. Model package 동결과 전달
+## 4. 로봇에서 model 가져오기
 
-완료 상태이며 전체 model/processor를 저장한 run만 package한다.
+`trainctl`은 로봇에 접속하거나 model을 push하지 않는다. 로봇에서 이 server에
+저장된 완전한 model의 absolute path를 다음 command에 전달한다.
+
+```bash
+modelctl pull /absolute/server/path/to/model
+```
+
+`modelctl`은 inference에 필요한 file만 선택하고, rsync 진행률을 표시하며,
+중단된 copy를 이어서 실행하고, 결과를 알맞은 robot model directory에 설치한다.
+
+- LeRobot GR00T/ACT: `/workspace/model/lerobot/<model>`
+- native Isaac GR00T: `/workspace/model/groot/<model>`
+
+직접 load 가능한 model root를 전달하면 되며 deployment manifest나 checksum
+package는 필요하지 않다. 예시와 정확한 file 선택 규칙은 로봇의
+`/home/robotis/MODELCTL.md`를 참고한다.
+
+Immutable archive가 특별히 필요할 때는 server-side package와 verify command를
+계속 사용할 수 있지만, 일반 download workflow에는 포함되지 않는다.
 
 ```bash
 training/trainctl checkpoint package <run> --name <immutable_package_name>
 training/trainctl checkpoint verify <immutable_package_name>
-```
-
-Package는 `training/artifacts/models/<immutable_package_name>/`에 생성되는 직접
-load 가능한 model root이며 `deployment_manifest.json`과 `SHA256SUMS`를 포함한다.
-LeRobot package에는 pre/postprocessor와 statistics가, native Isaac package에는
-model, `processor/`, `experiment_cfg/`가 있어야 한다.
-
-Operator는 `rsync`를 직접 입력하지 않는다. Transfer command가 내부적으로 hidden
-staging path와 rsync checksum/partial 기능을 사용하고 robot에서 모든 SHA-256을
-검증한 뒤에만 atomically promote한다.
-
-```bash
-training/trainctl checkpoint transfer <immutable_package_name> \
-  --target robotis@<robot-host> \
-  --port <ssh-port> \
-  --identity-file /path/to/key
-```
-
-`--dry-run`으로 계획만 확인할 수 있다. 기본 host workspace는
-`/home/robotis/cyclo_intelligence/docker/workspace`이며, 비표준 설치에서만
-`--robot-workspace`로 override한다. Staging directory 생성 전에 `trainctl`은
-`/home/robotis/cyclo_intelligence`가 active mountpoint인지 확인하고, 선택한
-workspace, home alias, `/mnt/ssd/cyclo_intelligence/workspace`의 device/inode가
-동일한지 검증한다. 불일치하면 fail closed하고 검증된 identity를 receipt에 기록한다.
-
-- LeRobot GR00T/ACT: `<robot-workspace>/model/lerobot/<package>`
-  (container `/workspace/model/lerobot/<package>`)
-- native Isaac GR00T: `<robot-workspace>/model/groot/<package>`
-  (container `/workspace/model/groot/<package>`)
-
-Transfer 성공은 consumer acknowledgment나 deployment 승인이 아니다. Robot이 만든
-receipt는 다음으로 기록한다.
-
-```bash
-training/trainctl checkpoint acknowledge <package> \
-  --consumer-receipt /path/to/robot_receipt.json
 ```
 
 ## 현재 한계

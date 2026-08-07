@@ -1,0 +1,18 @@
+_base: ../base/multi_queue.yaml
+name: 20260804_t700013_selected_four_v1
+description: >
+  Owner-selected Task 700013 sequence: native Isaac full prompt, native Isaac
+  subtask words, ACT without language, then LeRobot GR00T full prompt.
+continue_on_failure: false
+min_free_disk_gib: 100
+max_attempts: 1
+time_budget_hours: 72
+runs:
+  - config: ../runs/20260804_t700013_isaac-n17_lang-full5-servofirst_abs16_h40_b32_s20k_seed42_v1.yaml
+    overrides: []
+  - config: ../runs/20260804_t700013_isaac-n17_lang-sub5-words_abs16_h40_b32_s20k_seed42_v1.yaml
+    overrides: []
+  - config: ../runs/20260804_t700013_act_nolang_abs16_h100a100_b8_s100k_seed42_v1.yaml
+    overrides: []
+  - config: ../runs/20260804_t700013_lerobot-n17_lang-full5-servofirst_abs16_h40a12_b32_s20k_seed42_v1.yaml
+    overrides: []

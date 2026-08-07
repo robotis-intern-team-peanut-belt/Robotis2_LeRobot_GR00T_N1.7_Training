@@ -1,0 +1,13 @@
+_base: ../policies/lerobot_groot_n17.yaml
+name: 20260804_t700013_lerobot-n17_lang-full5-servofirst_abs16_h40a12_b32_s20k_seed42_v1
+description: Servo-first full-episode LeRobot GR00T N1.7 baseline for Task 700013.
+hypothesis: The normalized servo-first full instruction establishes the best held-out reference among Task 700013 language variants under an otherwise fixed recipe.
+dataset_ref: Task_700013_mainlang_servo_first_v1
+policy:
+  base_model_path: nvidia/GR00T-N1.7-3B
+tracking:
+  mode: offline
+  notes: Task700013 primary servo-first language baseline; absolute16/H40/A12/B32/20k/seed42; GPU-compatible non-albumentations LeRobot processor; cached base weights resolve to snapshot 2fc962b973bccdd5d8ce4f67cc63b264d6886495; compare only within the LeRobot backend on the same split.
+annotation:
+  owner: intern-team
+  notes: Attempt 1 resolved the raw local checkpoint sidecar and was stopped after proving a 53-second synchronous CPU preprocessing bottleneck. Attempt 2 uses the established LeRobot GPU-compatible processor while keeping the same cached weight snapshot, dataset, split, seed, and optimizer recipe.

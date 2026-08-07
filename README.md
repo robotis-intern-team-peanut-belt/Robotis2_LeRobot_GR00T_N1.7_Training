@@ -46,6 +46,21 @@ training/
 Run commands from the workspace root as `training/trainctl ...`, or from this
 directory as `./trainctl ...`.
 
+## Local W&B authentication
+
+Paste the API key into `training/.env.secret`:
+
+```bash
+WANDB_API_KEY="paste-your-key-here"
+```
+
+The file is Git-ignored, restricted to the local workspace, and loaded by both
+`training/activate_groot.sh` and `training/activate_lerobot.sh`. Training launched
+through `trainctl` also passes through those activation scripts. This avoids a
+user-wide `wandb login` entry in `~/.netrc`. A run still follows its resolved
+`tracking.mode`; an explicitly offline run does not become online just because a
+key is present.
+
 ## 1. Register one canonical LeRobot v3 dataset
 
 For a dataset already uploaded to this server:
@@ -127,51 +142,33 @@ training/trainctl run status <run>
 commands. Use `training/trainctl exec <run> --dry-run` for command inspection and
 `training/trainctl exec <run>` only for short foreground debugging.
 
-## 4. Freeze and deliver a model package
+## 4. Pull a model from the robot
 
-Only package a completed run that saved a complete model and processor pipeline:
+`trainctl` does not connect to or push models to the robot. Run the robot-side
+command with the absolute path of a complete saved model on this server:
+
+```bash
+modelctl pull /absolute/server/path/to/model
+```
+
+`modelctl` selects the files needed for inference, shows rsync progress, resumes
+an interrupted copy, and installs the result in the appropriate robot model
+directory:
+
+- LeRobot GR00T and ACT: `/workspace/model/lerobot/<model>`
+- native Isaac GR00T: `/workspace/model/groot/<model>`
+
+Pass the directly loadable model root; a deployment manifest or checksum package
+is not required. See `/home/robotis/MODELCTL.md` on the robot for examples and
+the exact file-selection rules.
+
+The server-side package and verify commands remain available when an immutable
+archive is specifically needed, but they are not part of the normal download
+workflow:
 
 ```bash
 training/trainctl checkpoint package <run> --name <immutable_package_name>
 training/trainctl checkpoint verify <immutable_package_name>
-```
-
-The package is a directly loadable model root under
-`training/artifacts/models/<immutable_package_name>/` with
-`deployment_manifest.json` and `SHA256SUMS`. A LeRobot package must include its
-pre/postprocessors and statistics. A native Isaac package must include its model,
-`processor/`, and `experiment_cfg/`.
-
-The operator does not type `rsync`. Transfer stages to a new hidden robot path,
-uses rsync internally with checksum/partial support, verifies every SHA-256 on the
-robot, and atomically promotes only after complete verification:
-
-```bash
-training/trainctl checkpoint transfer <immutable_package_name> \
-  --target robotis@<robot-host> \
-  --port <ssh-port> \
-  --identity-file /path/to/key
-```
-
-Use `--dry-run` to inspect the plan. The default host workspace is
-`/home/robotis/cyclo_intelligence/docker/workspace`; `--robot-workspace` is
-only an optional override for an unusual installation. Before creating a staging
-directory, `trainctl` requires `/home/robotis/cyclo_intelligence` to be an
-active mountpoint and verifies that the selected workspace, home alias, and
-`/mnt/ssd/cyclo_intelligence/workspace` have the same device/inode identity.
-It fails closed on any mismatch and records the verified identity in the receipt.
-
-- LeRobot GR00T and ACT: `<robot-workspace>/model/lerobot/<package>`
-  (container `/workspace/model/lerobot/<package>`)
-- native Isaac GR00T: `<robot-workspace>/model/groot/<package>`
-  (container `/workspace/model/groot/<package>`)
-
-A successful transfer is still not consumer acknowledgment or deployment
-approval. Record a robot-generated receipt with:
-
-```bash
-training/trainctl checkpoint acknowledge <package> \
-  --consumer-receipt /path/to/robot_receipt.json
 ```
 
 ## Known limits

@@ -1,0 +1,13 @@
+_base: ../policies/isaac_groot_n17.yaml
+name: 20260804_t700013_isaac-n17_lang-full5-servofirst_abs16_h40_b32_s20k_seed42_v1
+description: Servo-first full-episode native Isaac GR00T N1.7 baseline for Task 700013.
+hypothesis: The normalized servo-first full instruction establishes the best held-out reference among Task 700013 language variants under an otherwise fixed recipe.
+dataset_ref: Task_700013_mainlang_servo_first_v1
+policy:
+  base_model_path: /home/k_humanoid_3/.cache/huggingface/hub/models--nvidia--GR00T-N1.7-3B/snapshots/2fc962b973bccdd5d8ce4f67cc63b264d6886495
+tracking:
+  mode: offline
+  notes: Task700013 primary servo-first language baseline; absolute16/H40/B32/20k/seed42; compare only within the Isaac backend on the same split.
+annotation:
+  owner: intern-team
+  notes: Run only after the Isaac calibration, W&B entity verification, source pinning, and the 100 GiB disk gate pass.

@@ -2,13 +2,10 @@
 set -euo pipefail
 
 TRAINING_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-WORKSPACE="$(cd -- "${TRAINING_ROOT}/.." && pwd)"
-LEROBOT_ROOT="${LEROBOT_ROOT:-${WORKSPACE}/lerobot}"
-
 if ! declare -F conda >/dev/null 2>&1; then
   CONDA_BASE="$(conda info --base)"
   source "${CONDA_BASE}/etc/profile.d/conda.sh"
 fi
-source "${LEROBOT_ROOT}/activate_lerobot.sh" >/dev/null
+source "${TRAINING_ROOT}/activate_lerobot.sh" >/dev/null
 cd "${TRAINING_ROOT}"
 exec python -m data_pipeline.audit_omx_insert_captions "$@"

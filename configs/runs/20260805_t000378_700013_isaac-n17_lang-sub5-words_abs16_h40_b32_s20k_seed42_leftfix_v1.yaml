@@ -1,0 +1,16 @@
+_base: ../policies/isaac_groot_n17.yaml
+name: 20260805_t000378_700013_isaac-n17_lang-sub5-words_abs16_h40_b32_s20k_seed42_leftfix_v1
+description: Matched native Isaac GR00T N1.7 five-word run on the corrected 000378+700013 merge.
+hypothesis: With yesterday's recipe fixed, additional corrected demonstrations improve the five-token language condition over the Task 700013 baseline.
+dataset_ref: Task_000378_700013_left_gripper_fix_v1_merged_subtask_words_v1
+policy:
+  base_model_path: /home/k_humanoid_3/.cache/huggingface/hub/models--nvidia--GR00T-N1.7-3B/snapshots/2fc962b973bccdd5d8ce4f67cc63b264d6886495
+train:
+  save_total_limit: 1
+  save_only_model: true
+tracking:
+  mode: offline
+  notes: Corrected merged-data comparison; servo/electronic/cable/OMX-F3/OMX-Base; absolute16/H40/B32/20k/seed42; yesterday's unmasked H40 behavior retained.
+annotation:
+  owner: intern-team
+  notes: Compare only against yesterday's native Isaac word run; disclose the recomputed cross-subtask H40 fraction; retention is one model-only checkpoint.

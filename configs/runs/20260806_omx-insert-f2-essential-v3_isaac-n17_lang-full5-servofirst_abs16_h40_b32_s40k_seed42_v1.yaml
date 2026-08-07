@@ -1,0 +1,22 @@
+_base: ../policies/isaac_groot_n17.yaml
+name: 20260806_omx-insert-f2-essential-v3_isaac-n17_lang-full5-servofirst_abs16_h40_b32_s40k_seed42_v1
+description: Native Isaac GR00T N1.7 full-prompt run on the reviewed essential 391-segment
+  OMX Insert F2 v3 dataset.
+hypothesis: The reviewed essential subset reduces low-quality imitation targets and
+  improves insertion reliability relative to the unfiltered combined v3 dataset.
+dataset_ref: OMX_Insert_F2_essential_v3_mainlang_servo_first_v1
+policy:
+  base_model_path: /home/k_humanoid_3/.cache/huggingface/hub/models--nvidia--GR00T-N1.7-3B/snapshots/2fc962b973bccdd5d8ce4f67cc63b264d6886495
+train:
+  steps: 40000
+  save_freq: 10000
+  save_total_limit: 4
+  save_only_model: true
+tracking:
+  mode: offline
+  notes: Reviewed essential v3; canonical servo-first full prompt; absolute16/H40/B32/40k/seed42;
+    checkpoints retained at 10k, 20k, 30k, and 40k.
+annotation:
+  owner: intern-team
+  notes: Runs after the combined-v3 Isaac and ACT comparisons complete successfully.
+    Requested checkpoints 10k, 20k, 30k, and 40k are retained.
